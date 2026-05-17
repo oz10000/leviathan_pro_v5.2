@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+logs/
+exports/
+database/*.db
+*.zip
+leviathan_v52_streamlit/
