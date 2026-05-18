@@ -179,10 +179,9 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
         st.session_state.last_mode = mode
     adapter = st.session_state.adapter
 
-    # ====================== ROBUST DATA FETCH ======================
-    @st.cache_data(ttl=120, show_spinner="Fetching market data...")
+    # ====================== ROBUST DATA FETCH (FIXED) ======================
     def download_public_candles(symbol, bar, limit):
-        """Safe public candle download with fallback."""
+        """Safe public candle download – handles variable column count."""
         url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}-USDT-SWAP&bar={bar}&limit={limit}"
         try:
             resp = requests.get(url, timeout=10)
@@ -193,12 +192,14 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
             raw = payload["data"]
             if not raw or not isinstance(raw, list):
                 return pd.DataFrame()
-            # OKX returns reverse chronological; reverse to chronological
+            # Reverse to chronological order
             raw = raw[::-1]
-            df = pd.DataFrame(raw, columns=["ts","open","high","low","close","vol","volCcy"])
-            for col in ["open","high","low","close","vol"]:
+            # Keep only the first 7 standard columns: ts, open, high, low, close, vol, volCcy
+            df = pd.DataFrame(raw).iloc[:, :7]
+            df.columns = ["ts", "open", "high", "low", "close", "vol", "volCcy"]
+            for col in ["open", "high", "low", "close", "vol"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-            df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+            df["ts"] = pd.to_datetime(df["ts"].astype(np.int64), unit="ms")
             df = df.dropna().reset_index(drop=True)
             return df
         except Exception as e:
@@ -216,22 +217,19 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
         elif mode == "LIVE SIMULATION":
             df = download_public_candles(symbol, bar, limit)
             if df.empty and symbol == "BTC":
-                # fallback to ETH
                 st.info("BTC data unavailable, trying ETH...")
                 df = download_public_candles("ETH", bar, limit)
             return df
         elif mode == "BACKTEST":
-            # Use a larger limit for backtest and cache it
             if "hist_data" not in st.session_state:
-                with st.spinner("Downloading historical data (this may take a moment)..."):
+                with st.spinner("Downloading historical data (may take a moment)..."):
                     df = download_public_candles(symbol, bar, 300)
                     if not df.empty:
                         st.session_state.hist_data = df
                         st.success(f"Loaded {len(df)} candles.")
-                        # Run backtest automatically
                         adapter.run_backtest(df, leverage=manual_leverage if leverage_mode=="Manual" else None)
                     else:
-                        st.error("Failed to load historical data. Check your connection or try a different symbol.")
+                        st.error("Failed to load historical data. Check connection or try another symbol.")
             return st.session_state.get("hist_data", pd.DataFrame()).copy()
         else:
             # Fallback simulator
