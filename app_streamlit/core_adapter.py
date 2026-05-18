@@ -1,132 +1,87 @@
-import sys
-import os
+import requests
+import hmac
+import base64
+import json
 import time
 import pandas as pd
-import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
-# Agregar el Edge Core al path (ajustar según ubicación real)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'leviathan_edge_core'))
 
-from config import Config
-from core.feature_engine import compute_features
-from strategies.expansion_strategy import ExpansionStrategy
-from strategies.pullback_strategy import PullbackStrategy
-from strategies.reacceleration_strategy import ReaccelerationStrategy
-from strategies.depression_breakout import DepressionBreakoutStrategy
-from execution.exit_hybrid import HybridExit
+class OKXClient:
+    def __init__(self, api_key, secret_key, passphrase, testnet=True):
+        self.base_url = "https://demo.okx.com" if testnet else "https://www.okx.com"
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.passphrase = passphrase if not testnet else None
 
-class CoreAdapter:
-    """
-    Adaptador que envuelve el Edge Core.
-    Expone funciones para Streamlit sin modificar la lógica interna.
-    """
-    def __init__(self, mode="simulator"):
-        self.mode = mode  # "simulator", "testnet", "live"
-        self.strategies = [
-            ExpansionStrategy(),
-            PullbackStrategy(),
-            ReaccelerationStrategy(),
-            DepressionBreakoutStrategy()
-        ]
-        self.state = {
-            "balance": Config.INITIAL_CAPITAL,
-            "equity": Config.INITIAL_CAPITAL,
-            "pnl": 0.0,
-            "position": None,
-            "signal": None,
-            "loop_count": 0,
-            "last_execution": None,
-            "mode": mode
+    def _sign(self, method, path, body=""):
+        ts = datetime.now(timezone.utc).isoformat("T", "milliseconds").split("+")[0] + "Z"
+        msg = ts + method + path + body
+        mac = hmac.new(self.secret_key.encode(), msg.encode(), 'sha256').digest()
+        sign = base64.b64encode(mac).decode()
+        headers = {
+            "OK-ACCESS-KEY": self.api_key,
+            "OK-ACCESS-SIGN": sign,
+            "OK-ACCESS-TIMESTAMP": ts,
+            "Content-Type": "application/json"
         }
+        if self.passphrase:
+            headers["OK-ACCESS-PASSPHRASE"] = self.passphrase
+        return headers
 
-    def run_cycle(self, df_5m, df_15m=None, df_1h=None):
-        """
-        Ejecuta UN ciclo del Edge Core.
-        df_5m: DataFrame con columnas OHLCV (debe tener al menos 50 filas)
-        Retorna un dict con la señal y el estado actualizado.
-        """
-        if df_5m is None or len(df_5m) < 50:
-            self.state["signal"] = None
-            return self.get_snapshot()
+    def _request(self, method, endpoint, params=None, body=None):
+        url = self.base_url + endpoint
+        headers = self._sign(method, endpoint, body or "")
+        try:
+            if method == "GET":
+                resp = requests.get(url, params=params, headers=headers, timeout=10)
+            else:
+                resp = requests.post(url, json=body, headers=headers, timeout=10)
+            return resp.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-        # Calcular features
-        df_5m = compute_features(df_5m)
-        if df_15m is not None and len(df_15m) >= 20:
-            df_15m = compute_features(df_15m)
-        else:
-            df_15m = df_5m.copy()  # fallback
+    def get_candles(self, symbol, bar="5m", limit=100):
+        instId = f"{symbol}-USDT-SWAP"
+        url = f"{self.base_url}/api/v5/market/candles"
+        params = {"instId": instId, "bar": bar, "limit": limit}
+        try:
+            resp = requests.get(url, params=params, timeout=10).json()
+            data = resp["data"]
+            df = pd.DataFrame(data, columns=["ts","open","high","low","close","vol","volCcy"])
+            for col in ["open","high","low","close","vol"]:
+                df[col] = pd.to_numeric(df[col])
+            df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+            return df.sort_values("ts")
+        except:
+            return pd.DataFrame()
 
-        row_5m = df_5m.iloc[-1]
-        row_15m = df_15m.iloc[-1]
+    def get_balance(self):
+        resp = self._request("GET", "/api/v5/account/balance")
+        if resp.get("code") == "0":
+            for detail in resp["data"][0]["details"]:
+                if detail["ccy"] == "USDT":
+                    return float(detail["eq"])
+        return 0.0
 
-        # Determinar dirección por tendencia
-        direction = "LONG" if row_5m["ema20"] > row_5m["ema50"] else "SHORT"
-
-        # Evaluar estrategias
-        best_score = 0
-        best_strategy = None
-        for strat in self.strategies:
-            score = strat.compute_score(df_5m, df_15m, row_5m, row_15m, direction)
-            if score > best_score:
-                best_score = score
-                best_strategy = strat.name
-
-        # Decisión de entrada
-        if best_score >= Config.SCORE_THRESHOLD and self.state["position"] is None:
-            self.state["signal"] = direction
-            atr = row_5m["atr"]
-            entry = row_5m["close"]
-            sl = entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr
-            tp = entry + (1 if direction == "LONG" else -1) * Config.TP_ATR * atr
-            self.state["position"] = {
-                "symbol": "BTC-USDT-SWAP",
-                "dir": 1 if direction == "LONG" else -1,
-                "entry": entry,
-                "atr": atr,
-                "size": 0.01,
-                "leverage": 5,
-                "strategy": best_strategy,
-                "entry_time": time.time(),
-                "be_active": False,
-                "trail_active": False,
-                "sl": sl,
-                "trail_sl": sl,
-                "tp": tp
-            }
-        else:
-            self.state["signal"] = None
-
-        # Gestión de posición abierta
-        if self.state["position"] is not None:
-            pos = self.state["position"]
-            price = row_5m["close"]
-            exit_sig, reason, exit_price, updated = HybridExit.should_exit(
-                pos, price, time.time()
-            )
-            if updated:
-                self.state["position"] = updated
-            if exit_sig:
-                d = pos["dir"]
-                pnl = (exit_price - pos["entry"]) * d * pos["size"] * pos["leverage"] / pos["entry"]
-                self.state["balance"] += pnl
-                self.state["pnl"] += pnl
-                self.state["equity"] = self.state["balance"]
-                self.state["position"] = None
-
-        self.state["loop_count"] += 1
-        self.state["last_execution"] = datetime.now().strftime("%H:%M:%S")
-        return self.get_snapshot()
-
-    def get_snapshot(self):
-        """Devuelve el estado actual para Streamlit."""
-        return {
-            "mode": self.state["mode"],
-            "balance": self.state["balance"],
-            "equity": self.state["equity"],
-            "pnl": self.state["pnl"],
-            "position": self.state["position"],
-            "signal": self.state["signal"],
-            "loop_count": self.state["loop_count"],
-            "last_execution": self.state["last_execution"] or "--:--:--"
+    def market_order(self, symbol, side, size, pos_side):
+        body = {
+            "instId": f"{symbol}-USDT-SWAP",
+            "tdMode": "cross",
+            "side": side,
+            "ordType": "market",
+            "sz": str(size),
+            "posSide": pos_side
         }
+        return self._request("POST", "/api/v5/trade/order", body=body)
+
+    def close_position(self, symbol, pos_side):
+        close_side = "close_long" if pos_side == "long" else "close_short"
+        body = {
+            "instId": f"{symbol}-USDT-SWAP",
+            "tdMode": "cross",
+            "side": close_side,
+            "ordType": "market",
+            "sz": ""
+        }
+        return self._request("POST", "/api/v5/trade/order", body=body)
