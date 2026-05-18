@@ -1,5 +1,6 @@
 import streamlit as st
-import subprocess, os, time, json, sys
+import subprocess, os, time, json, sys, pandas as pd, numpy as np
+import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
 
@@ -7,7 +8,8 @@ st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
 
 # ────────────── PATH SETUP ──────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
-EDGE_CORE = SCRIPT_DIR.parent / "leviathan_edge_core"
+REPO_ROOT = SCRIPT_DIR.parent
+EDGE_CORE = REPO_ROOT / "leviathan_edge_core"
 if str(EDGE_CORE) not in sys.path:
     sys.path.insert(0, str(EDGE_CORE))
 
@@ -36,8 +38,22 @@ leverage = 5
 if not auto_lev:
     leverage = st.sidebar.slider("Leverage", 1, 8, 5)
 
-running = is_engine_running()
+st.sidebar.subheader("Accelerated Backtest")
+backtest_days = st.sidebar.selectbox("Period (days)", [1, 7, 30, 90, 180], index=2)
+if st.sidebar.button("Run Accelerated Backtest"):
+    from core_adapter import CoreAdapter
+    from backtest_engine import BacktestEngine
+    adapter = CoreAdapter(mode="backtest", initial_capital=100.0)
+    engine = BacktestEngine(adapter, symbols=adapter.symbols[:20], days=backtest_days)
+    with st.spinner(f"Backtesting {len(engine.symbols)} symbols over {backtest_days} days..."):
+        engine.download_all()
+        results = engine.run()
+        st.session_state["backtest_results"] = results
+        st.session_state["backtest_adapter"] = adapter
+    st.success(f"Backtest completed. {results['trades']} trades simulated.")
 
+# Motor persistente
+running = is_engine_running()
 if st.sidebar.button("▶️ START"):
     if not running:
         state = load_state()
@@ -94,3 +110,35 @@ if state:
             cols[i].metric(name, f"{val:.2f}")
 else:
     st.info("Press START to begin.")
+
+# ────────────── BACKTEST RESULTS ──────────────
+if "backtest_results" in st.session_state:
+    res = st.session_state["backtest_results"]
+    st.subheader("Backtest Results")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Sharpe", f"{res['sharpe']:.2f}")
+    col2.metric("Max DD", f"{res['maxdd']:.2%}")
+    col3.metric("Win Rate", f"{res['winrate']:.1%}")
+    col4.metric("Profit Factor", f"{res['profit_factor']:.2f}")
+    col5.metric("Trades", res['trades'])
+    st.line_chart(res["equity_history"])
+
+    # ────────────── COMPOUND GROWTH TABLE ──────────────
+    st.subheader("Compound Growth Projection")
+    adapter = st.session_state.get("backtest_adapter")
+    if adapter:
+        growth_df = adapter.compound_growth_table(
+            start_capitals=[1,2,3,4,5,6,7,8,9,10],
+            num_trades_list=[10, 20, 30, 60, 120],
+            leverage=4.8
+        )
+        st.dataframe(growth_df)
+
+        # Leverage comparison for 30 trades
+        st.subheader("Leverage Impact (10 USDT, 30 trades)")
+        leverage_options = [1,2,5,8,10,25,50]
+        leverage_data = []
+        for lev in leverage_options:
+            final_opt = 10 * (1.40** (30*0.918)) * (0.50** (30*0.082)) * (lev/4.8)  # simplificación
+            leverage_data.append({"Leverage": f"{lev}x", "Final (USDT)": f"{final_opt:.2f}"})
+        st.table(pd.DataFrame(leverage_data))
