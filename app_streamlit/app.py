@@ -8,10 +8,6 @@ from pathlib import Path
 # ====================== AUTO‑DISCOVERY & INTROSPECTION ======================
 @st.cache_resource
 def explore_repository():
-    """
-    Scan the repository, locate the Edge Core, and test imports.
-    Works when streamlit_app/ is parallel to leviathan_edge_core/.
-    """
     report = {
         "root": None,
         "tree": [],
@@ -20,16 +16,14 @@ def explore_repository():
         "imports": {},
         "errors": [],
     }
-    script_dir = Path(__file__).resolve().parent          # streamlit_app/
-    repo_root = script_dir.parent                         # common parent
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
 
-    # Search for a folder containing config.py and core/
     core_root = None
     for candidate in [repo_root / "leviathan_edge_core", repo_root]:
         if (candidate / "config.py").exists() and (candidate / "core").is_dir():
             core_root = candidate
             break
-    # Fallback: walk upward
     if core_root is None:
         for r in [script_dir] + list(script_dir.parents):
             if (r / "config.py").exists() and (r / "core").is_dir():
@@ -44,7 +38,6 @@ def explore_repository():
 
     report["root"] = str(core_root)
 
-    # Build tree of the Edge Core only (or whole repo – choose Edge Core)
     tree = []
     files = []
     base = core_root
@@ -61,11 +54,9 @@ def explore_repository():
     report["tree"] = tree
     report["files"] = files
 
-    # Ensure the Edge Core is importable
     if str(core_root) not in sys.path:
         sys.path.insert(0, str(core_root))
 
-    # Dynamically test imports
     import_status = {}
     critical_pairs = [
         ("config", "Config"),
@@ -86,7 +77,6 @@ def explore_repository():
             report["errors"].append(f"Import {mod_name}: {e}")
     report["imports"] = import_status
 
-    # Check local adapter
     try:
         import core_adapter
         import_status["core_adapter"] = "✅"
@@ -101,7 +91,6 @@ def explore_repository():
         import_status["okx_client"] = f"❌ {e}"
         report["errors"].append(f"okx_client: {e}")
 
-    # Required directories inside Edge Core
     required_dirs = ["core", "strategies", "execution"]
     for d in required_dirs:
         if not (core_root / d).is_dir():
@@ -113,14 +102,13 @@ def explore_repository():
 
 report = explore_repository()
 
-# ====================== PAGE CONFIG ======================
 st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
 
 # ====================== SIDEBAR DIAGNOSTICS ======================
 with st.sidebar:
     st.title("🩺 System Diagnostics")
     if report["errors"]:
-        st.error(f"Issues detected: {len(report['errors'])}")
+        st.error(f"Issues: {len(report['errors'])}")
         for e in report["errors"]:
             st.error(e)
     else:
@@ -130,28 +118,23 @@ with st.sidebar:
     if report["missing_required"]:
         st.warning(f"Missing dirs: {', '.join(report['missing_required'])}")
 
-    # Repository tree
     if report["tree"]:
         with st.expander("📁 Edge Core Tree"):
             st.code("\n".join(report["tree"]), language="")
 
-    # Import status
     if report["imports"]:
         with st.expander("🔍 Import Status"):
             for mod, status in report["imports"].items():
                 st.write(f"{status} {mod}")
 
-# ====================== GRACEFUL DEGRADATION ======================
 critical_fail = any("❌" in v for v in report["imports"].values())
 if critical_fail:
-    st.warning("⚠️ Some modules could not be imported. Limited functionality will be available.")
+    st.warning("⚠️ Some modules could not be imported. Limited functionality.")
 
-# ====================== MAIN APP (only if enough modules are present) ======================
 st.title("🐙 LEVIATHAN EDGE CORE DASHBOARD")
 
-# Check if we have at least config and the adapter
+# ====================== MAIN APP (if possible) ======================
 if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["imports"].get("core_adapter", "❌"):
-    # Imports
     from config import Config
     from core_adapter import CoreAdapter
     if "❌" not in report["imports"].get("okx_client", "❌"):
@@ -159,7 +142,6 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
     else:
         OKXClient = None
 
-    # Mode selection
     mode = st.sidebar.selectbox("MODE", ["BACKTEST", "LIVE SIMULATION", "TESTNET", "LIVE"])
     capital = st.sidebar.slider("Initial Capital (USDT)", 1.0, 1000.0, 100.0, 10.0)
     leverage_mode = st.sidebar.radio("Leverage", ["Auto (Edge Safe)", "Manual"], index=0)
@@ -167,7 +149,6 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
     if leverage_mode == "Manual":
         manual_leverage = st.sidebar.slider("Leverage", 1, 8, 5)
 
-    # OKX client (if needed)
     client = None
     if mode in ("TESTNET", "LIVE") and OKXClient:
         try:
@@ -181,7 +162,6 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
         except Exception as e:
             st.sidebar.error(f"Secrets error: {e}")
 
-    # Control buttons
     interval = st.sidebar.slider("Cycle Interval (s)", 5, 60, 30)
     if "running" not in st.session_state:
         st.session_state.running = False
@@ -194,48 +174,67 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
     if st.session_state.running:
         st_autorefresh(interval=interval * 1000, key="loop")
 
-    # Initialize adapter
     if "adapter" not in st.session_state or st.session_state.get("last_mode") != mode:
         st.session_state.adapter = CoreAdapter(mode=mode.lower(), initial_capital=capital)
         st.session_state.last_mode = mode
     adapter = st.session_state.adapter
 
-    # Data fetching
+    # ====================== ROBUST DATA FETCH ======================
+    @st.cache_data(ttl=120, show_spinner="Fetching market data...")
+    def download_public_candles(symbol, bar, limit):
+        """Safe public candle download with fallback."""
+        url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}-USDT-SWAP&bar={bar}&limit={limit}"
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("code") != "0":
+                raise ValueError(f"OKX API error: {payload.get('msg','')}")
+            raw = payload["data"]
+            if not raw or not isinstance(raw, list):
+                return pd.DataFrame()
+            # OKX returns reverse chronological; reverse to chronological
+            raw = raw[::-1]
+            df = pd.DataFrame(raw, columns=["ts","open","high","low","close","vol","volCcy"])
+            for col in ["open","high","low","close","vol"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+            df = df.dropna().reset_index(drop=True)
+            return df
+        except Exception as e:
+            st.error(f"Data download error for {symbol}: {e}")
+            return pd.DataFrame()
+
     def fetch_data(symbol="BTC", bar="5m", limit=100):
         if mode in ("TESTNET", "LIVE") and client:
             try:
                 df = client.get_candles(symbol, bar=bar, limit=limit)
-                return df
+                return df if not df.empty else pd.DataFrame()
             except Exception as e:
                 st.warning(f"Candle fetch error: {e}")
                 return pd.DataFrame()
         elif mode == "LIVE SIMULATION":
-            url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}-USDT-SWAP&bar={bar}&limit={limit}"
-            try:
-                resp = requests.get(url, timeout=10).json()
-                data = resp["data"]
-                df = pd.DataFrame(data, columns=["ts","open","high","low","close","vol","volCcy"])
-                for col in ["open","high","low","close","vol"]:
-                    df[col] = pd.to_numeric(df[col])
-                df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
-                return df.sort_values("ts")
-            except:
-                return pd.DataFrame()
+            df = download_public_candles(symbol, bar, limit)
+            if df.empty and symbol == "BTC":
+                # fallback to ETH
+                st.info("BTC data unavailable, trying ETH...")
+                df = download_public_candles("ETH", bar, limit)
+            return df
         elif mode == "BACKTEST":
+            # Use a larger limit for backtest and cache it
             if "hist_data" not in st.session_state:
-                with st.spinner("Downloading historical data..."):
-                    url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}-USDT-SWAP&bar=5m&limit=300"
-                    resp = requests.get(url, timeout=10).json()
-                    data = resp["data"]
-                    df = pd.DataFrame(data, columns=["ts","open","high","low","close","vol","volCcy"])
-                    for col in ["open","high","low","close","vol"]:
-                        df[col] = pd.to_numeric(df[col])
-                    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
-                    df = df.sort_values("ts").reset_index(drop=True)
-                    st.session_state.hist_data = df
-                    adapter.run_backtest(df, leverage=manual_leverage if leverage_mode=="Manual" else None)
-            return st.session_state.hist_data.copy()
-        else:  # fallback simulator
+                with st.spinner("Downloading historical data (this may take a moment)..."):
+                    df = download_public_candles(symbol, bar, 300)
+                    if not df.empty:
+                        st.session_state.hist_data = df
+                        st.success(f"Loaded {len(df)} candles.")
+                        # Run backtest automatically
+                        adapter.run_backtest(df, leverage=manual_leverage if leverage_mode=="Manual" else None)
+                    else:
+                        st.error("Failed to load historical data. Check your connection or try a different symbol.")
+            return st.session_state.get("hist_data", pd.DataFrame()).copy()
+        else:
+            # Fallback simulator
             dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='1min')
             df = pd.DataFrame({
                 'ts': dates,
@@ -261,7 +260,7 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
     else:
         snapshot = adapter.get_snapshot()
 
-    # Dashboard
+    # Dashboard (identical to previous)
     if snapshot:
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Balance", f"${snapshot['balance']:.2f}")
@@ -317,4 +316,4 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
         elif df.empty:
             st.warning("No market data. Check connection or symbols.")
 else:
-    st.warning("Essential modules are missing. The trading engine cannot start. Use the sidebar diagnostics to fix the issues.")
+    st.warning("Essential modules missing. Trading engine cannot start.")
