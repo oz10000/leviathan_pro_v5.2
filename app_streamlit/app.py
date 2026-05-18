@@ -194,10 +194,12 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
                 return pd.DataFrame()
             # Reverse to chronological order
             raw = raw[::-1]
-            # Keep only the first 7 standard columns: ts, open, high, low, close, vol, volCcy
+            # Keep only the first 7 standard columns
             df = pd.DataFrame(raw).iloc[:, :7]
             df.columns = ["ts", "open", "high", "low", "close", "vol", "volCcy"]
-            for col in ["open", "high", "low", "close", "vol"]:
+            # Rename 'vol' to 'volume' for Edge Core compatibility
+            df.rename(columns={"vol": "volume"}, inplace=True)
+            for col in ["open", "high", "low", "close", "volume"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             df["ts"] = pd.to_datetime(df["ts"].astype(np.int64), unit="ms")
             df = df.dropna().reset_index(drop=True)
@@ -210,6 +212,8 @@ if "❌" not in report["imports"].get("config", "❌") and "❌" not in report["
         if mode in ("TESTNET", "LIVE") and client:
             try:
                 df = client.get_candles(symbol, bar=bar, limit=limit)
+                if not df.empty and "vol" in df.columns:
+                    df.rename(columns={"vol": "volume"}, inplace=True)
                 return df if not df.empty else pd.DataFrame()
             except Exception as e:
                 st.warning(f"Candle fetch error: {e}")
