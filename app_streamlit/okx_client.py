@@ -6,7 +6,6 @@ import time
 import pandas as pd
 from datetime import datetime, timezone
 
-
 class OKXClient:
     def __init__(self, api_key, secret_key, passphrase, testnet=True):
         self.base_url = "https://demo.okx.com" if testnet else "https://www.okx.com"
@@ -65,23 +64,12 @@ class OKXClient:
         return 0.0
 
     def market_order(self, symbol, side, size, pos_side):
-        body = {
-            "instId": f"{symbol}-USDT-SWAP",
-            "tdMode": "cross",
-            "side": side,
-            "ordType": "market",
-            "sz": str(size),
-            "posSide": pos_side
-        }
+        body = {"instId": f"{symbol}-USDT-SWAP", "tdMode": "cross",
+                "side": side, "ordType": "market", "sz": str(size), "posSide": pos_side}
         return self._request("POST", "/api/v5/trade/order", body=body)
 
     def close_position(self, symbol, pos_side):
         close_side = "close_long" if pos_side == "long" else "close_short"
-        body = {
-            "instId": f"{symbol}-USDT-SWAP",
-            "tdMode": "cross",
-            "side": close_side,
-            "ordType": "market",
-            "sz": ""
-        }
+        body = {"instId": f"{symbol}-USDT-SWAP", "tdMode": "cross",
+                "side": close_side, "ordType": "market", "sz": ""}
         return self._request("POST", "/api/v5/trade/order", body=body)
