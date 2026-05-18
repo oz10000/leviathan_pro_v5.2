@@ -1,8 +1,12 @@
-import sys, os, time
+import sys, os, time, requests, traceback
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from collections import deque
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+EDGE_CORE = SCRIPT_DIR.parent / "leviathan_edge_core"
+if str(EDGE_CORE) not in sys.path:
+    sys.path.insert(0, str(EDGE_CORE))
 
 from config import Config
 from core.feature_engine import compute_features
@@ -11,143 +15,163 @@ from strategies.pullback_strategy import PullbackStrategy
 from strategies.reacceleration_strategy import ReaccelerationStrategy
 from strategies.depression_breakout import DepressionBreakoutStrategy
 from execution.exit_hybrid import HybridExit
+from convergence.mtf_convergence_engine import MTFConvergenceEngine
+from convergence.divergence_detector import DivergenceDetector
+from convergence.market_entropy import MarketEntropy
+from convergence.imperfect_trade_detector import ImperfectTradeDetector
+from convergence.leverage_safety_engine import LeverageSafetyEngine
+from daps.daps_core import DAPSCore
+from daps.daps_equilibrium import DAPSEquilibrium
+from analytics.persistence_engine import PersistenceEngine
 
 class CoreAdapter:
     def __init__(self, mode="simulator", initial_capital=None):
         self.mode = mode
-        self.strategies = [
-            ExpansionStrategy(),
-            PullbackStrategy(),
-            ReaccelerationStrategy(),
-            DepressionBreakoutStrategy()
-        ]
         capital = initial_capital if initial_capital is not None else Config.INITIAL_CAPITAL
+        self.strategies = [ExpansionStrategy(), PullbackStrategy(),
+                           ReaccelerationStrategy(), DepressionBreakoutStrategy()]
         self.state = {
-            "balance": capital,
-            "equity": capital,
-            "pnl": 0.0,
-            "position": None,
-            "signal": None,
-            "loop_count": 0,
-            "last_execution": None,
-            "mode": mode,
-            "equity_history": [capital],
-            "oscillators": {},
-            "backtest_metrics": None,
-            "live_metrics": None,
+            "balance": capital, "equity": capital, "pnl": 0.0,
+            "position": None, "signal": None, "loop_count": 0,
+            "last_execution": None, "mode": mode,
+            "equity_history": [capital], "oscillators": {},
             "trades": []
         }
-        self._prev_balance = capital
+        self.mtf_conv = MTFConvergenceEngine()
+        self.divergence = DivergenceDetector()
+        self.entropy = MarketEntropy()
+        self.imperfect = ImperfectTradeDetector()
+        self.leverage_safety = LeverageSafetyEngine()
+        self.daps = DAPSCore()
+        self.daps_equilibrium = DAPSEquilibrium()
+        self.persistence = PersistenceEngine()
+        self.symbols = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE"]
+        self.asset_data = {}
+        self.commission = 0.001
+        self.slippage = 0.0002
+        self._last_full_update = 0
 
-    def run_cycle(self, df_5m, df_15m=None, df_1h=None, leverage=None):
-        if df_5m is None or len(df_5m) < 50:
-            self.state["signal"] = None
-            return self.get_snapshot()
+    def _download_public_candles(self, symbol, bar="5m", limit=100):
+        url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}-USDT-SWAP&bar={bar}&limit={limit}"
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200: return pd.DataFrame()
+            payload = resp.json()
+            if payload.get("code") != "0": return pd.DataFrame()
+            raw = payload["data"]
+            if not raw or not isinstance(raw, list): return pd.DataFrame()
+            raw = raw[::-1]
+            df = pd.DataFrame(raw).iloc[:, :7]
+            df.columns = ["ts","open","high","low","close","vol","volCcy"]
+            df.rename(columns={"vol":"volume"}, inplace=True)
+            for col in ["open","high","low","close","volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["ts"] = pd.to_datetime(df["ts"].astype(np.int64), unit="ms")
+            return df.dropna().reset_index(drop=True)
+        except:
+            return pd.DataFrame()
 
-        df_5m = compute_features(df_5m)
-        if df_15m is not None and len(df_15m) >= 20:
-            df_15m = compute_features(df_15m)
-        else:
-            df_15m = df_5m.copy()
+    def update_asset_data(self):
+        now = time.time()
+        # Actualizar máximo 3 símbolos por ciclo (escalonado)
+        symbols_to_update = self.symbols[:3] if (now - self._last_full_update) < 300 else self.symbols
+        for sym in symbols_to_update:
+            if sym not in self.asset_data or (now - self.asset_data[sym].get("ts",0)) > 300:
+                df = self._download_public_candles(sym)
+                if not df.empty:
+                    self.asset_data[sym] = {"df": df, "ts": now}
+                time.sleep(0.2)
+        self._last_full_update = now if len(symbols_to_update) == len(self.symbols) else self._last_full_update
 
-        row_5m = df_5m.iloc[-1]
-        row_15m = df_15m.iloc[-1]
+    def run_cycle(self, leverage=None):
+        now = datetime.utcnow()
+        self.update_asset_data()
 
-        direction = "LONG" if row_5m["ema20"] > row_5m["ema50"] else "SHORT"
-
-        best_score = 0
-        best_strategy = None
-        for strat in self.strategies:
-            score = strat.compute_score(df_5m, df_15m, row_5m, row_15m, direction)
-            if score > best_score:
-                best_score = score
-                best_strategy = strat.name
-
-        if best_score >= Config.SCORE_THRESHOLD and self.state["position"] is None:
-            self.state["signal"] = direction
-            atr = row_5m["atr"]
-            entry = row_5m["close"]
-            lev = leverage if leverage else Config.SAFE_LEVERAGE_MIN
-            sl = entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr
-            tp = entry + (1 if direction == "LONG" else -1) * Config.TP_ATR * atr
-            self.state["position"] = {
-                "symbol": "BTC-USDT-SWAP",
-                "dir": 1 if direction == "LONG" else -1,
-                "entry": entry,
-                "atr": atr,
-                "size": 0.01,
-                "leverage": lev,
-                "strategy": best_strategy,
-                "entry_time": time.time(),
-                "be_active": False,
-                "trail_active": False,
-                "sl": sl,
-                "trail_sl": sl,
-                "tp": tp
-            }
-        else:
-            self.state["signal"] = None
-
+        # Gestionar posición abierta
         if self.state["position"] is not None:
             pos = self.state["position"]
-            price = row_5m["close"]
-            exit_sig, reason, exit_price, updated = HybridExit.should_exit(pos, price, time.time())
-            if updated:
-                self.state["position"] = updated
-            if exit_sig:
-                d = pos["dir"]
-                pnl = (exit_price - pos["entry"]) * d * pos["size"] * pos["leverage"] / pos["entry"]
-                self.state["balance"] += pnl
-                self.state["pnl"] += pnl
-                self.state["equity"] = self.state["balance"]
-                self.state["trades"].append({"pnl": pnl, "time": datetime.now(), "reason": reason})
-                self.state["position"] = None
+            sym = pos["symbol"]
+            df = self.asset_data.get(sym, {}).get("df")
+            if df is not None and len(df) > 0:
+                price = df["close"].iloc[-1]
+                exit_sig, reason, exit_price, updated = HybridExit.should_exit(pos, price, time.time())
+                if updated: self.state["position"] = updated
+                if exit_sig:
+                    d = pos["dir"]
+                    pnl = (exit_price - pos["entry"]) * d * pos["size"] * pos["leverage"] / pos["entry"]
+                    pnl -= abs(exit_price - pos["entry"]) * pos["size"] * self.commission
+                    pnl -= pos["entry"] * pos["size"] * self.slippage
+                    self.state["balance"] += pnl
+                    self.state["pnl"] += pnl
+                    self.state["equity"] = self.state["balance"]
+                    self.state["trades"].append({"time": now.isoformat(), "symbol": sym,
+                        "strategy": pos.get("strategy",""), "direction": "LONG" if pos["dir"]==1 else "SHORT",
+                        "entry": pos["entry"], "exit_price": exit_price, "pnl": pnl, "reason": reason})
+                    self.state["position"] = None
+            self._update_telemetry(now)
+            return self.get_snapshot()
 
-        self.state["equity_history"].append(self.state["balance"])
-        self.state["loop_count"] += 1
-        self.state["last_execution"] = datetime.now().strftime("%H:%M:%S")
+        # Buscar nueva señal entre los activos
+        candidates = []
+        for sym in self.symbols:
+            df = self.asset_data.get(sym, {}).get("df")
+            if df is None or len(df) < 50: continue
+            df_feat = compute_features(df.copy())
+            row5 = df_feat.iloc[-1]
+            # MTF simplificado
+            tf_data = {"5m": {"trend": 1 if row5["ema20"] > row5["ema50"] else -1,
+                              "momentum": row5.get("momentum",0), "volatility_regime": 0}}
+            mtf_score = self.mtf_conv.compute(tf_data)
+            if mtf_score < Config.MTF_CONVERGENCE_THRESHOLD: continue
+            # Divergencia
+            price_arr = df_feat["close"].values[-20:]
+            vol_arr = df_feat["volume"].values[-20:]
+            rsi_arr = df_feat["rsi_14"].values[-20:] if "rsi_14" in df_feat.columns else np.ones(20)*50
+            macd_arr = df_feat["macd_hist"].values[-20:] if "macd_hist" in df_feat.columns else np.zeros(20)
+            div_score = self.divergence.compute(price_arr, vol_arr, rsi_arr, macd_arr)
+            if div_score > Config.DIVERGENCE_MAX_TOLERANCE: continue
+            # Entropía
+            ent = self.entropy.shannon_entropy(price_arr)
+            if ent > Config.ENTROPY_MAX_ALLOWED: continue
+            # Estrategia
+            direction = "LONG" if row5["ema20"] > row5["ema50"] else "SHORT"
+            best_score = 0
+            best_strat = None
+            for strat in self.strategies:
+                score = strat.compute_score(df_feat, df_feat, row5, row5, direction)
+                if score > best_score: best_score = score; best_strat = strat.name
+            meta = best_score * mtf_score * (1-div_score) * (1-ent) * self.persistence.persistence_score() * self.daps_equilibrium.equilibrium_score
+            if self.imperfect.is_defective(meta, div_score, ent, mtf_score): continue
+            candidates.append({"symbol": sym, "meta": meta, "direction": direction,
+                               "strategy": best_strat, "entry": row5["close"], "atr": row5["atr"]})
+        if not candidates:
+            self._update_telemetry(now)
+            return self.get_snapshot()
 
-        # Oscillators (simple: equity volatility)
-        if len(self.state["equity_history"]) > 10:
-            rets = np.diff(self.state["equity_history"][-20:]) / self.state["equity_history"][-20:-1]
-            self.state["oscillators"]["Volatility"] = np.std(rets) * 100 if len(rets)>0 else 0
-
+        best = max(candidates, key=lambda x: x["meta"])
+        safe_lev = self.leverage_safety.safe_leverage(6.0, best.get("mtf",0.8), best.get("div",0.2), 0.0, best.get("ent",0.5))
+        lev = leverage if leverage is not None else safe_lev
+        size = 0.01  # simplificado
+        sl = best["entry"] - (1 if best["direction"]=="LONG" else -1) * Config.SL_ATR * best["atr"]
+        tp = best["entry"] + (1 if best["direction"]=="LONG" else -1) * Config.TP_ATR * best["atr"]
+        self.state["position"] = {"symbol": best["symbol"], "dir": 1 if best["direction"]=="LONG" else -1,
+            "entry": best["entry"], "atr": best["atr"], "size": size, "leverage": lev,
+            "strategy": best["strategy"], "entry_time": time.time(),
+            "be_active": False, "trail_active": False, "sl": sl, "trail_sl": sl, "tp": tp}
+        self.state["signal"] = best["direction"]
+        self._update_telemetry(now)
         return self.get_snapshot()
 
-    def run_backtest(self, df_5m, leverage=None):
-        self.state["balance"] = Config.INITIAL_CAPITAL
-        self.state["equity"] = Config.INITIAL_CAPITAL
-        self.state["pnl"] = 0.0
-        self.state["position"] = None
-        self.state["equity_history"] = [Config.INITIAL_CAPITAL]
-        self.state["trades"] = []
-
-        for i in range(50, len(df_5m)):
-            window = df_5m.iloc[:i+1]
-            self.run_cycle(window, leverage=leverage)
-
-        eq = np.array(self.state["equity_history"])
-        rets = np.diff(eq) / eq[:-1]
-        sharpe = np.mean(rets) / np.std(rets) * np.sqrt(365*24) if len(rets) > 1 else 0
-        maxdd = (np.maximum.accumulate(eq) - eq).max() / np.maximum.accumulate(eq).max()
-        winrate = np.mean([t["pnl"]>0 for t in self.state["trades"]]) if self.state["trades"] else 0
-        profit_factor = (sum(t["pnl"] for t in self.state["trades"] if t["pnl"]>0) / abs(sum(t["pnl"] for t in self.state["trades"] if t["pnl"]<0))) if self.state["trades"] else 0
-        self.state["backtest_metrics"] = {
-            "sharpe": sharpe,
-            "maxdd": maxdd,
-            "winrate": winrate,
-            "profit_factor": profit_factor
-        }
-        return self.state["backtest_metrics"]
+    def _update_telemetry(self, now):
+        self.state["equity_history"].append(self.state["balance"])
+        self.state["loop_count"] += 1
+        self.state["last_execution"] = now.strftime("%H:%M:%S")
+        if len(self.state["equity_history"]) > 10:
+            rets = np.diff(self.state["equity_history"][-20:]) / self.state["equity_history"][-20:-1]
+            self.state["oscillators"]["Volatility"] = np.std(rets)*100 if len(rets)>0 else 0
 
     def get_snapshot(self):
-        return {
-            "mode": self.state["mode"],
-            "balance": self.state["balance"],
-            "equity": self.state["equity"],
-            "pnl": self.state["pnl"],
-            "position": self.state["position"],
-            "signal": self.state["signal"],
-            "loop_count": self.state["loop_count"],
-            "last_execution": self.state["last_execution"] or "--:--:--"
-        }
+        return {"balance": self.state["balance"], "equity": self.state["equity"],
+                "pnl": self.state["pnl"], "position": self.state["position"],
+                "signal": self.state["signal"], "loop_count": self.state["loop_count"],
+                "last_execution": self.state.get("last_execution","--:--:--")}
