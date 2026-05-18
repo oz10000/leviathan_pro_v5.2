@@ -8,8 +8,18 @@ import os
 from pathlib import Path
 
 # ---------- CONFIGURACIÓN DE RUTAS ----------
-# Asegurar que el Edge Core esté en el path
-EDGE_CORE_PATH = Path(__file__).resolve().parent.parent / "leviathan_edge_core"
+# Determinar la ruta absoluta al Edge Core desde la ubicación de este script
+SCRIPT_DIR = Path(__file__).resolve().parent          # app_streamlit/
+REPO_ROOT = SCRIPT_DIR.parent                         # raíz del repo
+EDGE_CORE_PATH = REPO_ROOT / "leviathan_edge_core"
+
+# Verificar que el Edge Core existe
+if not EDGE_CORE_PATH.exists():
+    st.error(f"❌ Edge Core folder not found at `{EDGE_CORE_PATH}`. "
+             "Please ensure it is uploaded to the repository.")
+    st.stop()
+
+# Agregar el Edge Core al path
 if str(EDGE_CORE_PATH) not in sys.path:
     sys.path.insert(0, str(EDGE_CORE_PATH))
 
@@ -20,7 +30,7 @@ st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
 st.sidebar.title("⚙️ Control Panel")
 mode = st.sidebar.selectbox("MODE", ["SIMULATOR", "TESTNET", "LIVE"])
 
-# Cargar credenciales (solo si no es simulador)
+# ---------- CARGA DE CREDENCIALES (solo si no es simulador) ----------
 client = None
 if mode != "SIMULATOR":
     try:
@@ -28,7 +38,6 @@ if mode != "SIMULATOR":
         secret_key = st.secrets.get("OKX_SECRET_KEY", "")
         passphrase = st.secrets.get("OKX_PASSPHRASE", "")
         if api_key and secret_key:
-            # Importar OKXClient solo aquí (evita carga innecesaria)
             from okx_client import OKXClient
             client = OKXClient(api_key, secret_key, passphrase, testnet=(mode == "TESTNET"))
         else:
@@ -56,16 +65,29 @@ if st.session_state.running:
 
 # ---------- INICIALIZAR ENGINE SOLO SI ESTÁ CORRIENDO ----------
 adapter = None
+engine_error = None
+
 if st.session_state.running:
-    # Importar el adaptador bajo demanda
-    from core_adapter import CoreAdapter
-    if "adapter" not in st.session_state:
-        st.session_state.adapter = CoreAdapter(mode=mode.lower())
-    adapter = st.session_state.adapter
+    try:
+        from core_adapter import CoreAdapter
+        if "adapter" not in st.session_state:
+            st.session_state.adapter = CoreAdapter(mode=mode.lower())
+        adapter = st.session_state.adapter
+    except ImportError as e:
+        engine_error = (
+            f"Failed to import Edge Core. Check that `leviathan_edge_core/` exists and all modules are present.\n"
+            f"Technical details: {e}"
+        )
+        st.error(engine_error)
+        st.session_state.running = False   # detener automáticamente
+    except Exception as e:
+        engine_error = f"Unexpected error initializing engine: {e}"
+        st.error(engine_error)
+        st.session_state.running = False
 
 # ---------- OBTENER DATOS ----------
 df = pd.DataFrame()
-if adapter is not None:
+if adapter is not None and engine_error is None:
     if mode == "SIMULATOR":
         # Datos sintéticos
         dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='1min')
@@ -86,19 +108,24 @@ if adapter is not None:
             cache = st.session_state.candles_cache
             symbol = "BTC"
             if symbol not in cache or (now - cache[symbol].get("ts", 0)) > 60:
-                df = client.get_candles(symbol, bar="5m", limit=100)
-                if not df.empty:
-                    cache[symbol] = {"df": df, "ts": now}
+                try:
+                    df = client.get_candles(symbol, bar="5m", limit=100)
+                    if not df.empty:
+                        cache[symbol] = {"df": df, "ts": now}
+                except Exception as e:
+                    st.warning(f"Failed to fetch candles: {e}")
             else:
                 df = cache[symbol]["df"]
         else:
-            # Sin cliente, usar datos vacíos
-            df = pd.DataFrame()
+            st.warning("OKX client not initialized. Check credentials.")
 
 # ---------- EJECUTAR CICLO ----------
 snapshot = None
 if adapter is not None and not df.empty:
-    snapshot = adapter.run_cycle(df)
+    try:
+        snapshot = adapter.run_cycle(df)
+    except Exception as e:
+        st.error(f"Edge Core cycle error: {e}")
 elif adapter is not None:
     snapshot = adapter.get_snapshot()
 
@@ -128,6 +155,8 @@ if snapshot:
 else:
     if not st.session_state.running:
         st.info("Engine not started. Press **PLAY** to initialize the Edge Core.")
+    elif engine_error:
+        pass   # ya se mostró el error
     elif df.empty:
         st.warning("No market data available. Check connection or symbols.")
     else:
