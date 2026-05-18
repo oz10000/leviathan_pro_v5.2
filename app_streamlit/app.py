@@ -5,47 +5,47 @@ import numpy as np
 import time
 import sys
 import os
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'leviathan_edge_core'))
-from core_adapter import CoreAdapter
-from okx_client import OKXClient
+# ---------- CONFIGURACIÓN DE RUTAS ----------
+# Asegurar que el Edge Core esté en el path
+EDGE_CORE_PATH = Path(__file__).resolve().parent.parent / "leviathan_edge_core"
+if str(EDGE_CORE_PATH) not in sys.path:
+    sys.path.insert(0, str(EDGE_CORE_PATH))
 
+# ---------- CONFIGURACIÓN DE STREAMLIT ----------
 st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
 
-# ---------- CONFIGURACIÓN DE MODO ----------
+# ---------- MODO ----------
 st.sidebar.title("⚙️ Control Panel")
 mode = st.sidebar.selectbox("MODE", ["SIMULATOR", "TESTNET", "LIVE"])
 
-# Cargar credenciales si no es simulador
+# Cargar credenciales (solo si no es simulador)
+client = None
 if mode != "SIMULATOR":
-    api_key = st.secrets.get("OKX_API_KEY", "")
-    secret_key = st.secrets.get("OKX_SECRET_KEY", "")
-    passphrase = st.secrets.get("OKX_PASSPHRASE", "")
-    testnet = mode == "TESTNET"
-    client = OKXClient(api_key, secret_key, passphrase, testnet=testnet)
-else:
-    client = None
-
-# ---------- INICIALIZAR ADAPTER ----------
-if "adapter" not in st.session_state:
-    st.session_state.adapter = CoreAdapter(mode=mode.lower())
-
-adapter = st.session_state.adapter
-
-# Cambiar modo si el usuario lo modifica
-if adapter.state["mode"] != mode.lower():
-    adapter.state["mode"] = mode.lower()
+    try:
+        api_key = st.secrets.get("OKX_API_KEY", "")
+        secret_key = st.secrets.get("OKX_SECRET_KEY", "")
+        passphrase = st.secrets.get("OKX_PASSPHRASE", "")
+        if api_key and secret_key:
+            # Importar OKXClient solo aquí (evita carga innecesaria)
+            from okx_client import OKXClient
+            client = OKXClient(api_key, secret_key, passphrase, testnet=(mode == "TESTNET"))
+        else:
+            st.sidebar.warning("Missing API credentials in secrets.toml")
+    except Exception as e:
+        st.sidebar.error(f"Error loading secrets: {e}")
 
 # ---------- CONTROLES ----------
 interval = st.sidebar.slider("Execution Interval (s)", 5, 60, 30)
+
+if "running" not in st.session_state:
+    st.session_state.running = False
 
 col1, col2 = st.sidebar.columns(2)
 if col1.button("▶️ START"):
     st.session_state.running = True
 if col2.button("⏸️ STOP"):
-    st.session_state.running = False
-
-if "running" not in st.session_state:
     st.session_state.running = False
 
 st.sidebar.write(f"Loop State: {'🟢 RUNNING' if st.session_state.running else '🔴 STOPPED'}")
@@ -54,51 +54,81 @@ st.sidebar.write(f"Loop State: {'🟢 RUNNING' if st.session_state.running else 
 if st.session_state.running:
     st_autorefresh(interval=interval * 1000, key="loop")
 
+# ---------- INICIALIZAR ENGINE SOLO SI ESTÁ CORRIENDO ----------
+adapter = None
+if st.session_state.running:
+    # Importar el adaptador bajo demanda
+    from core_adapter import CoreAdapter
+    if "adapter" not in st.session_state:
+        st.session_state.adapter = CoreAdapter(mode=mode.lower())
+    adapter = st.session_state.adapter
+
 # ---------- OBTENER DATOS ----------
-if mode == "SIMULATOR":
-    # Generar datos sintéticos o usar datos públicos de OKX sin autenticación
-    dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='1min')
-    df = pd.DataFrame({
-        'ts': dates,
-        'open': 50000 + np.cumsum(np.random.randn(100)*20),
-        'high': 0, 'low': 0, 'close': 0, 'volume': 1000
-    })
-    df['high'] = df['open'] + np.abs(np.random.randn(100)*10)
-    df['low'] = df['open'] - np.abs(np.random.randn(100)*10)
-    df['close'] = df['open'] + np.random.randn(100)*2
-else:
-    # Obtener datos reales de OKX
-    if client:
-        df = client.get_candles("BTC", bar="5m", limit=100)
+df = pd.DataFrame()
+if adapter is not None:
+    if mode == "SIMULATOR":
+        # Datos sintéticos
+        dates = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='1min')
+        df = pd.DataFrame({
+            'ts': dates,
+            'open': 50000 + np.cumsum(np.random.randn(100)*20),
+            'high': 0, 'low': 0, 'close': 0, 'volume': 1000
+        })
+        df['high'] = df['open'] + np.abs(np.random.randn(100)*10)
+        df['low'] = df['open'] - np.abs(np.random.randn(100)*10)
+        df['close'] = df['open'] + np.random.randn(100)*2
     else:
-        df = pd.DataFrame()
+        if client:
+            # Cache simple de velas (evita llamadas excesivas)
+            now = time.time()
+            if "candles_cache" not in st.session_state:
+                st.session_state.candles_cache = {}
+            cache = st.session_state.candles_cache
+            symbol = "BTC"
+            if symbol not in cache or (now - cache[symbol].get("ts", 0)) > 60:
+                df = client.get_candles(symbol, bar="5m", limit=100)
+                if not df.empty:
+                    cache[symbol] = {"df": df, "ts": now}
+            else:
+                df = cache[symbol]["df"]
+        else:
+            # Sin cliente, usar datos vacíos
+            df = pd.DataFrame()
 
 # ---------- EJECUTAR CICLO ----------
-if st.session_state.running and not df.empty:
+snapshot = None
+if adapter is not None and not df.empty:
     snapshot = adapter.run_cycle(df)
-else:
+elif adapter is not None:
     snapshot = adapter.get_snapshot()
 
 # ---------- DASHBOARD ----------
 st.title("🐙 LEVIATHAN EDGE CORE DASHBOARD")
 st.markdown(f"**MODE:** {mode} | **STATUS:** {'🟢 RUNNING' if st.session_state.running else '🔴 STOPPED'}")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Balance", f"${snapshot['balance']:.2f} USDT")
-col2.metric("Equity", f"${snapshot['equity']:.2f} USDT")
-col3.metric("PnL", f"{snapshot['pnl']:+.2f} USDT")
+if snapshot:
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Balance", f"${snapshot['balance']:.2f} USDT")
+    col2.metric("Equity", f"${snapshot['equity']:.2f} USDT")
+    col3.metric("PnL", f"{snapshot['pnl']:+.2f} USDT")
 
-st.markdown("---")
-col_sig, col_pos = st.columns(2)
-with col_sig:
-    st.write(f"**Signal:** {snapshot['signal'] or 'NONE'}")
-with col_pos:
-    if snapshot['position']:
-        pos = snapshot['position']
-        st.write(f"**Open Position:** {pos.get('dir','?')==1 and 'LONG' or 'SHORT'} "
-                 f"Entry: {pos['entry']:.2f} | SL: {pos['sl']:.2f} | TP: {pos['tp']:.2f}")
+    st.markdown("---")
+    col_sig, col_pos = st.columns(2)
+    with col_sig:
+        st.write(f"**Signal:** {snapshot['signal'] or 'NONE'}")
+    with col_pos:
+        if snapshot['position']:
+            pos = snapshot['position']
+            st.write(f"**Open Position:** {'LONG' if pos.get('dir')==1 else 'SHORT'} "
+                     f"Entry: {pos['entry']:.2f} | SL: {pos['sl']:.2f} | TP: {pos['tp']:.2f}")
+        else:
+            st.write("**Open Position:** NONE")
+    st.markdown("---")
+    st.write(f"Loops executed: {snapshot['loop_count']} | Last: {snapshot['last_execution']}")
+else:
+    if not st.session_state.running:
+        st.info("Engine not started. Press **PLAY** to initialize the Edge Core.")
+    elif df.empty:
+        st.warning("No market data available. Check connection or symbols.")
     else:
-        st.write("**Open Position:** NONE")
-
-st.markdown("---")
-st.write(f"Loops executed: {snapshot['loop_count']} | Last: {snapshot['last_execution']}")
+        st.info("Waiting for first cycle...")
