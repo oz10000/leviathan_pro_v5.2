@@ -3,6 +3,15 @@ import pandas as pd
 
 def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    # --- Asegurar que existe la columna 'volume' ---
+    if "volume" not in df.columns and "vol" in df.columns:
+        df.rename(columns={"vol": "volume"}, inplace=True)
+    if "volume" not in df.columns and "volCcy" in df.columns:
+        # Último recurso: usar volCcy como volumen
+        df.rename(columns={"volCcy": "volume"}, inplace=True)
+    if "volume" not in df.columns:
+        df["volume"] = 1.0  # valor mínimo para evitar división por cero
+
     df["prev_close"] = df["close"].shift(1)
     df["tr"] = np.maximum(df["high"] - df["low"],
                           np.maximum(abs(df["high"] - df["prev_close"]),
