@@ -65,14 +65,28 @@ class CoreAdapter:
             raw = payload["data"]
             if not raw or not isinstance(raw, list): return pd.DataFrame()
             raw = raw[::-1]
-            df = pd.DataFrame(raw).iloc[:, :7]
-            df.columns = ["ts","open","high","low","close","vol","volCcy"]
+            # OKX puede devolver 7 o 9 columnas; tomamos las primeras 6 y añadimos ts
+            df = pd.DataFrame(raw)
+            # Nos quedamos con las columnas que necesitamos: ts, open, high, low, close, vol
+            if df.shape[1] >= 7:
+                df = df.iloc[:, :7]
+                df.columns = ["ts","open","high","low","close","vol","volCcy"]
+            elif df.shape[1] >= 6:
+                df = df.iloc[:, :6]
+                df.columns = ["ts","open","high","low","close","vol"]
+            else:
+                return pd.DataFrame()
+            # Renombrar vol -> volume
             df.rename(columns={"vol":"volume"}, inplace=True)
             for col in ["open","high","low","close","volume"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                else:
+                    df[col] = 1.0
             df["ts"] = pd.to_datetime(df["ts"].astype(np.int64), unit="ms")
             return df.dropna().reset_index(drop=True)
-        except:
+        except Exception as e:
+            print(f"Download error {symbol}: {e}")
             return pd.DataFrame()
 
     def update_asset_data(self):
@@ -86,7 +100,7 @@ class CoreAdapter:
                 time.sleep(0.2)
         self._last_full_update = now if len(symbols_to_update) == len(self.symbols) else self._last_full_update
 
-    # ---------- CICLO ----------
+    # ---------- CICLO PRINCIPAL ----------
     def run_cycle(self, leverage=None):
         now = datetime.utcnow()
         self.update_asset_data()
@@ -160,7 +174,7 @@ class CoreAdapter:
         self._update_telemetry(now)
         return self.get_snapshot()
 
-    # ---------- EVALUACIÓN ----------
+    # ---------- EVALUACIÓN DE SEÑAL (devuelve SIEMPRE sl y tp) ----------
     def evaluate_signal(self, df):
         if len(df) < 50: return None
         df_feat = compute_features(df.copy())
@@ -196,6 +210,7 @@ class CoreAdapter:
 
         atr = row5["atr"]
         safe_lev = self.leverage_safety.safe_leverage(6.0, mtf_score, div_score, 0.0, ent)
+        # Aseguramos que sl y tp siempre estén en el dict
         sl = row5["close"] - (1 if direction=="LONG" else -1) * Config.SL_ATR * atr
         tp = row5["close"] + (1 if direction=="LONG" else -1) * Config.TP_ATR * atr
 
