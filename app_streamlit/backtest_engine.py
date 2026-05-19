@@ -10,7 +10,7 @@ class BacktestEngine:
         self.symbols = symbols or adapter.symbols[:20]
         self.days = days
         self.bar = bar
-        self.max_candles = min(days * 288, 300)  # OKX limita a 300
+        self.max_candles = min(days * 288, 300)
         self.data = {}
         self.timeline = []
         self.results = None
@@ -53,7 +53,7 @@ class BacktestEngine:
             if not market_snapshot:
                 continue
 
-            # Evaluar todas las señales posibles
+            # Evaluar señales
             best_signal = None
             best_symbol = None
             for sym, df in market_snapshot.items():
@@ -64,7 +64,7 @@ class BacktestEngine:
                         best_signal = signal
                         best_symbol = sym
 
-            # Abrir posición si no hay ninguna
+            # Abrir posición si no hay una y hay señal válida
             if best_signal is not None and self.adapter.state["position"] is None:
                 self.adapter.state["position"] = {
                     "symbol": best_symbol,
@@ -79,7 +79,8 @@ class BacktestEngine:
                     "trail_active": False,
                     "sl": best_signal["sl"],
                     "trail_sl": best_signal["sl"],
-                    "tp": best_signal["tp"]
+                    "tp": best_signal["tp"],
+                    "atr_pct_entry": best_signal["atr"] / best_signal["entry"]
                 }
 
             # Gestionar posición abierta
