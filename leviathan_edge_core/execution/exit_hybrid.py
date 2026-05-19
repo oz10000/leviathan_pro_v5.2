@@ -4,12 +4,12 @@ import time
 class HybridExit:
     @staticmethod
     def should_exit(pos: dict, price: float, now: float, atr_hist: list = None):
-        # Obtener valores con protección de clave faltante
+        # Protección completa contra claves faltantes
         d = pos.get("dir", 1)
         entry = pos.get("entry", price)
         atr = pos.get("atr", entry * 0.01)
 
-        tp = entry + d * Config.TP_ATR * atr
+        tp = pos.get("tp", entry + d * Config.TP_ATR * atr)
         sl = pos.get("sl", entry - d * Config.SL_ATR * atr)
         trail_sl = pos.get("trail_sl", sl)
         be_active = pos.get("be_active", False)
@@ -52,4 +52,5 @@ class HybridExit:
         pos["trail_active"] = trail_active
         pos["trail_sl"] = trail_sl
         pos["sl"] = sl
+        pos["tp"] = tp
         return False, "", price, pos
