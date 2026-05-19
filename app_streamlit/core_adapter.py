@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 
-# Asegurar que el Edge Core es importable
 SCRIPT_DIR = Path(__file__).resolve().parent
 EDGE_CORE = SCRIPT_DIR.parent / "leviathan_edge_core"
 if str(EDGE_CORE) not in sys.path:
@@ -40,7 +39,7 @@ class CoreAdapter:
             "last_execution": None, "mode": mode,
             "equity_history": [capital], "oscillators": {}, "trades": []
         }
-        # Motores cuantitativos
+        # Filtros cuantitativos
         self.mtf_conv = MTFConvergenceEngine()
         self.divergence = DivergenceDetector()
         self.entropy = MarketEntropy()
@@ -87,7 +86,7 @@ class CoreAdapter:
                 time.sleep(0.2)
         self._last_full_update = now if len(symbols_to_update) == len(self.symbols) else self._last_full_update
 
-    # ---------- CICLO PRINCIPAL ----------
+    # ---------- CICLO ----------
     def run_cycle(self, leverage=None):
         now = datetime.utcnow()
         self.update_asset_data()
@@ -142,29 +141,36 @@ class CoreAdapter:
         sl = best["entry"] - (1 if best["direction"]=="LONG" else -1) * Config.SL_ATR * best["atr"]
         tp = best["entry"] + (1 if best["direction"]=="LONG" else -1) * Config.TP_ATR * best["atr"]
         self.state["position"] = {
-            "symbol": best["symbol"], "dir": 1 if best["direction"]=="LONG" else -1,
-            "entry": best["entry"], "atr": best["atr"], "size": size,
-            "leverage": lev, "strategy": best.get("strategy",""),
-            "entry_time": time.time(), "be_active": False, "trail_active": False,
-            "sl": sl, "trail_sl": sl, "tp": tp
+            "symbol": best["symbol"],
+            "dir": 1 if best["direction"]=="LONG" else -1,
+            "entry": best["entry"],
+            "atr": best["atr"],
+            "size": size,
+            "leverage": lev,
+            "strategy": best.get("strategy",""),
+            "entry_time": time.time(),
+            "be_active": False,
+            "trail_active": False,
+            "sl": sl,
+            "trail_sl": sl,
+            "tp": tp,
+            "atr_pct_entry": best["atr"] / best["entry"]
         }
         self.state["signal"] = best["direction"]
         self._update_telemetry(now)
         return self.get_snapshot()
 
-    # ---------- EVALUACIÓN DE SEÑAL (devuelve dict completo) ----------
+    # ---------- EVALUACIÓN ----------
     def evaluate_signal(self, df):
         if len(df) < 50: return None
         df_feat = compute_features(df.copy())
         row5 = df_feat.iloc[-1]
 
-        # MTF
         tf_data = {"5m": {"trend": 1 if row5["ema20"] > row5["ema50"] else -1,
                           "momentum": row5.get("momentum",0), "volatility_regime":0}}
         mtf_score = self.mtf_conv.compute(tf_data)
         if mtf_score < Config.MTF_CONVERGENCE_THRESHOLD: return None
 
-        # Divergencia
         price_arr = df_feat["close"].values[-20:]
         vol_arr = df_feat["volume"].values[-20:]
         rsi_arr = df_feat["rsi_14"].values[-20:] if "rsi_14" in df_feat.columns else np.ones(20)*50
@@ -172,11 +178,9 @@ class CoreAdapter:
         div_score = self.divergence.compute(price_arr, vol_arr, rsi_arr, macd_arr)
         if div_score > Config.DIVERGENCE_MAX_TOLERANCE: return None
 
-        # Entropía
         ent = self.entropy.shannon_entropy(price_arr)
         if ent > Config.ENTROPY_MAX_ALLOWED: return None
 
-        # Dirección
         direction = "LONG" if row5["ema20"] > row5["ema50"] else "SHORT"
         best_score = 0
         best_strat = None
@@ -214,7 +218,7 @@ class CoreAdapter:
         if len(self.state["equity_history"]) < 30: return 6.0
         eq = np.array(self.state["equity_history"][-50:])
         rets = np.diff(eq) / eq[:-1]
-        return np.mean(rets) / np.std(rets) * np.sqrt(365*24) if len(rets) > 1 else 6.0
+        return np.mean(rets) / np.std(rets) * np.sqrt(365*24) if len(rets)>1 else 6.0
 
     def _current_drawdown(self):
         peak = max(self.state["equity_history"]) if self.state["equity_history"] else self.state["balance"]
@@ -239,12 +243,11 @@ class CoreAdapter:
             "last_execution": self.state.get("last_execution","--:--:--")
         }
 
-    # ---------- TABLA DE CRECIMIENTO COMPUESTO ----------
+    # ---------- TABLA DE CRECIMIENTO ----------
     def compound_growth_table(self, start_capitals=None, num_trades_list=None, leverage=None):
         if start_capitals is None: start_capitals = [1,2,3,4,5,6,7,8,9,10]
         if num_trades_list is None: num_trades_list = [10,20,30,60,120]
         if leverage is None: leverage = 4.8
-        # Usar métricas del backtest si existen
         wr = 0.935
         avg_win = 0.40
         avg_loss = -0.50
