@@ -1,0 +1,36 @@
+name: Leviathan Runtime
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4      # keep under 6h limit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Engine
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET_KEY: ${{ secrets.OKX_SECRET_KEY }}
+          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+          LEVIATHAN_MODE: testnet   # or live
+          MAX_CYCLES: 8             # ~4 min at 30s interval
+        run: python runtime/engine_runner.py
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leviathan-state
+          path: runtime/
