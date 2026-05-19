@@ -64,8 +64,11 @@ class BacktestEngine:
                         best_signal = signal
                         best_symbol = sym
 
-            # Abrir posición si no hay una y hay señal válida
+            # Abrir posición si no hay una y la señal es válida
             if best_signal is not None and self.adapter.state["position"] is None:
+                # Verificar que existan las claves necesarias
+                sl = best_signal.get("sl", best_signal["entry"] - (1 if best_signal["direction"]=="LONG" else -1) * 0.7 * best_signal["atr"])
+                tp = best_signal.get("tp", best_signal["entry"] + (1 if best_signal["direction"]=="LONG" else -1) * 2.5 * best_signal["atr"])
                 self.adapter.state["position"] = {
                     "symbol": best_symbol,
                     "dir": 1 if best_signal["direction"] == "LONG" else -1,
@@ -77,9 +80,9 @@ class BacktestEngine:
                     "entry_time": time.time(),
                     "be_active": False,
                     "trail_active": False,
-                    "sl": best_signal["sl"],
-                    "trail_sl": best_signal["sl"],
-                    "tp": best_signal["tp"],
+                    "sl": sl,
+                    "trail_sl": sl,
+                    "tp": tp,
                     "atr_pct_entry": best_signal["atr"] / best_signal["entry"]
                 }
 
