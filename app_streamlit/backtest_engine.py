@@ -35,7 +35,6 @@ class BacktestEngine:
     def run(self):
         print(f"Backtesting {len(self.symbols)} symbols over {len(self.timeline)} candles...")
         start_time = time.time()
-        # Resetear adaptador
         self.adapter.state["balance"] = 100.0
         self.adapter.state["equity"] = 100.0
         self.adapter.state["pnl"] = 0.0
@@ -53,7 +52,6 @@ class BacktestEngine:
             if not market_snapshot:
                 continue
 
-            # Evaluar señales
             best_signal = None
             best_symbol = None
             for sym, df in market_snapshot.items():
@@ -64,11 +62,15 @@ class BacktestEngine:
                         best_signal = signal
                         best_symbol = sym
 
-            # Abrir posición si no hay una y la señal es válida
             if best_signal is not None and self.adapter.state["position"] is None:
-                # Verificar que existan las claves necesarias
-                sl = best_signal.get("sl", best_signal["entry"] - (1 if best_signal["direction"]=="LONG" else -1) * 0.7 * best_signal["atr"])
-                tp = best_signal.get("tp", best_signal["entry"] + (1 if best_signal["direction"]=="LONG" else -1) * 2.5 * best_signal["atr"])
+                # Calcular sl / tp si no vienen en el dict
+                sl = best_signal.get("sl")
+                tp = best_signal.get("tp")
+                if sl is None:
+                    sl = best_signal["entry"] - (1 if best_signal["direction"] == "LONG" else -1) * 0.7 * best_signal["atr"]
+                if tp is None:
+                    tp = best_signal["entry"] + (1 if best_signal["direction"] == "LONG" else -1) * 2.5 * best_signal["atr"]
+
                 self.adapter.state["position"] = {
                     "symbol": best_symbol,
                     "dir": 1 if best_signal["direction"] == "LONG" else -1,
@@ -86,7 +88,6 @@ class BacktestEngine:
                     "atr_pct_entry": best_signal["atr"] / best_signal["entry"]
                 }
 
-            # Gestionar posición abierta
             if self.adapter.state["position"] is not None:
                 pos = self.adapter.state["position"]
                 sym = pos["symbol"]
@@ -94,6 +95,15 @@ class BacktestEngine:
                 if df is not None and len(df) > 0:
                     price = df["close"].iloc[-1]
                     from execution.exit_hybrid import HybridExit
+                    # Asegurar que pos tenga todas las claves necesarias
+                    pos.setdefault("sl", pos["entry"] - (1 if pos["dir"] == 1 else -1) * 0.7 * pos["atr"])
+                    pos.setdefault("trail_sl", pos["sl"])
+                    pos.setdefault("tp", pos["entry"] + (1 if pos["dir"] == 1 else -1) * 2.5 * pos["atr"])
+                    pos.setdefault("be_active", False)
+                    pos.setdefault("trail_active", False)
+                    pos.setdefault("entry_time", time.time())
+                    pos.setdefault("leverage", 5)
+                    pos.setdefault("atr_pct_entry", pos["atr"] / pos["entry"])
                     exit_sig, reason, exit_price, updated = HybridExit.should_exit(pos, price, time.time())
                     if updated:
                         self.adapter.state["position"] = updated
