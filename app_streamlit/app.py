@@ -1,15 +1,15 @@
 import streamlit as st
-import subprocess, os, time, json, sys, pandas as pd, numpy as np
+import subprocess, os, time, json, sys
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from pathlib import Path
-from datetime import datetime
 
 st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
 
 # ────────────── PATH SETUP ──────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-EDGE_CORE = REPO_ROOT / "leviathan_edge_core"
+EDGE_CORE = SCRIPT_DIR.parent / "leviathan_edge_core"
 if str(EDGE_CORE) not in sys.path:
     sys.path.insert(0, str(EDGE_CORE))
 
@@ -66,7 +66,7 @@ if st.sidebar.button("▶️ START"):
         proc = subprocess.Popen(["python", "engine_runner.py"], cwd=str(SCRIPT_DIR))
         PID_FILE.write_text(str(proc.pid))
         running = True
-        st.success("Engine started – will persist even if you close this page")
+        st.success("Engine started – persists even if you close this page")
     else:
         st.warning("Engine already running")
 
@@ -84,8 +84,6 @@ if st.sidebar.button("⏸️ STOP"):
         st.info("Engine not running")
 
 st.sidebar.write(f"Engine: {'🟢 RUNNING' if running else '🔴 STOPPED'}")
-if running and PID_FILE.exists():
-    st.sidebar.write(f"PID: {PID_FILE.read_text().strip()}")
 
 # ────────────── DASHBOARD ──────────────
 st.title("🐙 LEVIATHAN EDGE DASHBOARD")
@@ -99,7 +97,7 @@ if state:
     st.write(f"Loops: {state.get('loop_count',0)} | Last cycle: {state.get('last_execution','--')}")
     if state.get("position"):
         pos = state["position"]
-        st.write(f"**Position:** {'LONG' if pos.get('dir')==1 else 'SHORT'} {pos.get('symbol','')} @ {pos.get('entry')} | SL: {pos.get('sl')} | TP: {pos.get('tp')}")
+        st.write(f"**Position:** {'LONG' if pos.get('dir')==1 else 'SHORT'} {pos.get('symbol','')} @ {pos.get('entry')}")
     if state.get("equity_history"):
         st.subheader("Equity Curve")
         st.line_chart(state["equity_history"])
@@ -129,16 +127,7 @@ if "backtest_results" in st.session_state:
     if adapter:
         growth_df = adapter.compound_growth_table(
             start_capitals=[1,2,3,4,5,6,7,8,9,10],
-            num_trades_list=[10, 20, 30, 60, 120],
+            num_trades_list=[10,20,30,60,120],
             leverage=4.8
         )
         st.dataframe(growth_df)
-
-        # Leverage comparison for 30 trades
-        st.subheader("Leverage Impact (10 USDT, 30 trades)")
-        leverage_options = [1,2,5,8,10,25,50]
-        leverage_data = []
-        for lev in leverage_options:
-            final_opt = 10 * (1.40** (30*0.918)) * (0.50** (30*0.082)) * (lev/4.8)  # simplificación
-            leverage_data.append({"Leverage": f"{lev}x", "Final (USDT)": f"{final_opt:.2f}"})
-        st.table(pd.DataFrame(leverage_data))
