@@ -4,7 +4,7 @@ import time
 class HybridExit:
     @staticmethod
     def should_exit(pos: dict, price: float, now: float, atr_hist: list = None):
-        # Protección completa contra claves faltantes
+        # Valores seguros ante cualquier clave faltante
         d = pos.get("dir", 1)
         entry = pos.get("entry", price)
         atr = pos.get("atr", entry * 0.01)
