@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os, pandas as pd, time
+import json, os, pandas as pd, time, requests
 from pathlib import Path
 
 st.set_page_config(page_title="LEVIATHAN EDGE", layout="wide")
@@ -15,13 +15,97 @@ def load_state():
             return json.load(f)
     return None
 
+def trigger_workflow():
+    """Dispara el workflow leviathan_runtime.yml"""
+    gh_token = st.secrets.get("GH_TOKEN")
+    if not gh_token:
+        st.error("❌ GH_TOKEN no configurado en Streamlit Secrets")
+        return False
+    
+    try:
+        url = "https://api.github.com/repos/oz10000/leviathan_pro_v5.2/actions/workflows/leviathan_runtime.yml/dispatches"
+        headers = {
+            "Authorization": f"token {gh_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        data = {"ref": "main"}
+        
+        response = requests.post(url, json=data, headers=headers, timeout=10)
+        
+        if response.status_code == 204:
+            st.success("✅ Workflow disparado exitosamente")
+            return True
+        else:
+            st.error(f"❌ Error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        st.error(f"❌ Error al disparar workflow: {str(e)}")
+        return False
+
+def cancel_workflow():
+    """Cancela los workflows activos"""
+    gh_token = st.secrets.get("GH_TOKEN")
+    if not gh_token:
+        st.error("❌ GH_TOKEN no configurado en Streamlit Secrets")
+        return False
+    
+    try:
+        # Obtener runs activos
+        url = "https://api.github.com/repos/oz10000/leviathan_pro_v5.2/actions/runs?status=in_progress"
+        headers = {
+            "Authorization": f"token {gh_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            runs = response.json().get("workflow_runs", [])
+            cancelled_count = 0
+            
+            for run in runs:
+                cancel_url = f"https://api.github.com/repos/oz10000/leviathan_pro_v5.2/actions/runs/{run['id']}/cancel"
+                cancel_response = requests.post(cancel_url, headers=headers, timeout=10)
+                
+                if cancel_response.status_code == 202:
+                    cancelled_count += 1
+            
+            if cancelled_count > 0:
+                st.success(f"✅ {cancelled_count} workflow(s) cancelado(s)")
+                # Crear stop.txt para shutdown limpio
+                STOP_FILE.parent.mkdir(parents=True, exist_ok=True)
+                STOP_FILE.write_text("stop")
+                return True
+            else:
+                st.info("ℹ️ No hay workflows activos para cancelar")
+                return False
+        else:
+            st.error(f"❌ Error: {response.status_code}")
+            return False
+    except Exception as e:
+        st.error(f"❌ Error al cancelar workflow: {str(e)}")
+        return False
+
 # Sidebar controls
 st.sidebar.title("⚙️ Engine Control")
-if st.sidebar.button("⏹️ STOP"):
-    STOP_FILE.write_text("stop")
-    st.sidebar.success("Stop signal sent. Engine will shut down gracefully.")
-if st.sidebar.button("🔄 Refresh"):
-    st.experimental_rerun()
+
+col1, col2, col3 = st.sidebar.columns(3)
+
+with col1:
+    if st.button("▶️ START", use_container_width=True):
+        trigger_workflow()
+
+with col2:
+    if st.button("⏹️ STOP", use_container_width=True):
+        cancel_workflow()
+
+with col3:
+    if st.button("🔄 Refresh", use_container_width=True):
+        st.rerun()
+
+# Verificar si GH_TOKEN está configurado
+if not st.secrets.get("GH_TOKEN"):
+    st.sidebar.warning("⚠️ GH_TOKEN no configurado. Agrega en Streamlit Cloud → Settings → Secrets")
 
 st.title("🐙 LEVIATHAN EDGE DASHBOARD")
 state = load_state()
