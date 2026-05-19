@@ -52,6 +52,7 @@ class BacktestEngine:
             if not market_snapshot:
                 continue
 
+            # 1. Evaluar señales
             best_signal = None
             best_symbol = None
             for sym, df in market_snapshot.items():
@@ -62,8 +63,8 @@ class BacktestEngine:
                         best_signal = signal
                         best_symbol = sym
 
+            # 2. Abrir posición si no hay una
             if best_signal is not None and self.adapter.state["position"] is None:
-                # Calcular sl / tp si no vienen en el dict
                 sl = best_signal.get("sl")
                 tp = best_signal.get("tp")
                 if sl is None:
@@ -88,43 +89,50 @@ class BacktestEngine:
                     "atr_pct_entry": best_signal["atr"] / best_signal["entry"]
                 }
 
-            if self.adapter.state["position"] is not None:
-                pos = self.adapter.state["position"]
-                sym = pos["symbol"]
-                df = market_snapshot.get(sym)
-                if df is not None and len(df) > 0:
-                    price = df["close"].iloc[-1]
-                    from execution.exit_hybrid import HybridExit
-                    # Asegurar que pos tenga todas las claves necesarias
-                    pos.setdefault("sl", pos["entry"] - (1 if pos["dir"] == 1 else -1) * 0.7 * pos["atr"])
-                    pos.setdefault("trail_sl", pos["sl"])
-                    pos.setdefault("tp", pos["entry"] + (1 if pos["dir"] == 1 else -1) * 2.5 * pos["atr"])
-                    pos.setdefault("be_active", False)
-                    pos.setdefault("trail_active", False)
-                    pos.setdefault("entry_time", time.time())
-                    pos.setdefault("leverage", 5)
-                    pos.setdefault("atr_pct_entry", pos["atr"] / pos["entry"])
-                    exit_sig, reason, exit_price, updated = HybridExit.should_exit(pos, price, time.time())
-                    if updated:
-                        self.adapter.state["position"] = updated
-                    if exit_sig:
-                        d = pos["dir"]
-                        pnl = ((exit_price - pos["entry"]) * d * pos["size"] * pos["leverage"] /
-                               pos["entry"])
-                        fee = abs(exit_price - pos["entry"]) * pos["size"] * self.adapter.commission
-                        slip = pos["entry"] * pos["size"] * self.adapter.slippage
-                        pnl -= (fee + slip)
-                        self.adapter.state["balance"] += pnl
-                        self.adapter.state["pnl"] += pnl
-                        self.adapter.state["equity"] = self.adapter.state["balance"]
-                        self.adapter.state["trades"].append({
-                            "time": ts, "symbol": sym,
-                            "strategy": pos.get("strategy", ""),
-                            "direction": "LONG" if pos["dir"] == 1 else "SHORT",
-                            "entry": pos["entry"], "exit_price": exit_price,
-                            "pnl": pnl, "reason": reason
-                        })
-                        self.adapter.state["position"] = None
+            # 3. Gestionar posición abierta
+            pos = self.adapter.state["position"]
+            if pos is not None:
+                # Blindaje: si falta 'symbol', cerrar posición forzosamente
+                sym = pos.get("symbol")
+                if sym is None or sym == "":
+                    # Posición corrupta – eliminar
+                    self.adapter.state["position"] = None
+                else:
+                    df = market_snapshot.get(sym)
+                    if df is not None and len(df) > 0:
+                        price = df["close"].iloc[-1]
+                        # Asegurar claves mínimas
+                        pos.setdefault("sl", pos["entry"] - (1 if pos["dir"] == 1 else -1) * 0.7 * pos["atr"])
+                        pos.setdefault("trail_sl", pos["sl"])
+                        pos.setdefault("tp", pos["entry"] + (1 if pos["dir"] == 1 else -1) * 2.5 * pos["atr"])
+                        pos.setdefault("be_active", False)
+                        pos.setdefault("trail_active", False)
+                        pos.setdefault("entry_time", time.time())
+                        pos.setdefault("leverage", 5)
+                        pos.setdefault("atr_pct_entry", pos["atr"] / pos["entry"])
+
+                        from execution.exit_hybrid import HybridExit
+                        exit_sig, reason, exit_price, updated = HybridExit.should_exit(pos, price, time.time())
+                        if updated:
+                            self.adapter.state["position"] = updated
+                        if exit_sig:
+                            d = pos["dir"]
+                            pnl = ((exit_price - pos["entry"]) * d * pos["size"] * pos["leverage"] /
+                                   pos["entry"])
+                            fee = abs(exit_price - pos["entry"]) * pos["size"] * self.adapter.commission
+                            slip = pos["entry"] * pos["size"] * self.adapter.slippage
+                            pnl -= (fee + slip)
+                            self.adapter.state["balance"] += pnl
+                            self.adapter.state["pnl"] += pnl
+                            self.adapter.state["equity"] = self.adapter.state["balance"]
+                            self.adapter.state["trades"].append({
+                                "time": ts, "symbol": sym,
+                                "strategy": pos.get("strategy", ""),
+                                "direction": "LONG" if pos["dir"] == 1 else "SHORT",
+                                "entry": pos["entry"], "exit_price": exit_price,
+                                "pnl": pnl, "reason": reason
+                            })
+                            self.adapter.state["position"] = None
 
             self.adapter.state["equity_history"].append(self.adapter.state["balance"])
 
