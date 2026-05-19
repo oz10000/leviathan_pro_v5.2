@@ -4,7 +4,6 @@ import time
 class HybridExit:
     @staticmethod
     def should_exit(pos: dict, price: float, now: float, atr_hist: list = None):
-        # Valores seguros ante cualquier clave faltante
         d = pos.get("dir", 1)
         entry = pos.get("entry", price)
         atr = pos.get("atr", entry * 0.01)
@@ -23,8 +22,9 @@ class HybridExit:
                 sl = entry + d * cost
                 trail_sl = sl
 
+        # NUEVO: activar trailing stop solo cuando el precio se ha movido al menos 1.5*ATR a favor
         if be_active and not trail_active:
-            act = entry + d * 0.8 * atr
+            act = entry + d * 1.5 * atr
             if (d == 1 and price >= act) or (d == -1 and price <= act):
                 trail_active = True
         if trail_active:
