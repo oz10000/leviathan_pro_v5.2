@@ -3,12 +3,16 @@ name: Leviathan Runtime
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'   # every 5 minutes
+    - cron: '*/5 * * * *'
+
+concurrency:
+  group: leviathan-runtime
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 4      # keep under 6h limit
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
@@ -24,9 +28,18 @@ jobs:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_SECRET_KEY: ${{ secrets.OKX_SECRET_KEY }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
-          LEVIATHAN_MODE: testnet   # or live
-          MAX_CYCLES: 8             # ~4 min at 30s interval
+          LEVIATHAN_MODE: testnet
+          MAX_CYCLES: 8
         run: python runtime/engine_runner.py
+
+      - name: Commit runtime state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add runtime/
+          git commit -m "Update runtime state" || echo "No changes"
+          git push || echo "Push failed (non-critical)"
 
       - name: Upload artifacts
         if: always()
