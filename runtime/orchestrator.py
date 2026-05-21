@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """
-LEVIATHAN ORCHESTRATOR – WORKFLOW-FIRST RUNTIME
-- Usa el RotationalEngine original
-- Snapshots atómicos + journaling
-- Reconciliación con exchange
-- Protección catastrófica en exchange
-- Escribe state.json para compatibilidad con dashboard
-- Bloqueo de concurrencia
-- Heartbeat y health
+LEVIATHAN ORCHESTRATOR — AUTONOMOUS QUANTITATIVE RUNTIME
+Pipeline completo: escaneo → scoring → ejecución → gestión → persistencia → dashboard.
 """
 import sys, os, time, json, signal, logging, hashlib, random
 from pathlib import Path
@@ -65,6 +59,8 @@ class Orchestrator:
         self.router = None
         self.mode = os.getenv("LEVIATHAN_MODE", "testnet")
         self.symbols = []
+        self.last_scan_time = None
+        self.scan_results = []  # para el dashboard
 
     def run(self):
         if EMERGENCY_STOP.exists():
@@ -106,9 +102,21 @@ class Orchestrator:
                 if EMERGENCY_STOP.exists() or (RUNTIME_DIR / "stop.txt").exists():
                     break
 
+                # 1. Escanear y descargar datos de mercado
                 market_data = self.market.fetch(self.symbols)
                 self.engine.data = {sym: {"5m": df} for sym, df in market_data.items()}
 
+                # 2. Guardar resumen del escaneo para el dashboard
+                self.last_scan_time = time.strftime("%Y-%m-%d %H:%M:%S")
+                self.scan_results = [
+                    {"symbol": sym, "score": row["score"].iloc[-1] if "score" in row else 0,
+                     "trend": row.get("trend", "NEUTRAL")}
+                    for sym, df in market_data.items()
+                    if not df.empty and (row := df.iloc[-1]) is not None
+                ]
+                self.scan_results.sort(key=lambda x: x["score"], reverse=True)
+
+                # 3. Ejecutar ciclo del motor (scoring, selección, ejecución)
                 trade = self.engine.cycle()
                 if trade:
                     order = self.router.send(
@@ -119,8 +127,13 @@ class Orchestrator:
                         self.pos_mgr.open(trade)
                         self.journal.log_trade("open", trade)
 
+                # 4. Gestión de posiciones activas
                 self.hybrid_exit.manage(self.engine, self.pos_mgr, market_data)
+
+                # 5. Persistencia y snapshot
                 self.persistence.save_snapshot(self.engine, self.pos_mgr)
+
+                # 6. Escribir estado completo para el dashboard
                 self._write_dashboard_state(
                     balance=self.engine.capital,
                     equity=self.engine.capital,
@@ -130,6 +143,7 @@ class Orchestrator:
                     equity_history=self.engine.equity_curve,
                     running=True
                 )
+
                 self.journal.log_cycle(cycle, self.engine.capital)
                 self.health.record_cycle()
                 time.sleep(30)
@@ -156,7 +170,21 @@ class Orchestrator:
 
     def _write_dashboard_state(self, balance, equity=0, pnl=0, position=None,
                                loop_count=0, equity_history=None, running=False, error=None):
-        """Escribe state.json para el dashboard Streamlit."""
+        """Escribe state.json con toda la actividad visible para el dashboard."""
+        # Obtener trades recientes del PositionManager (últimos 10)
+        recent_trades = []
+        if self.pos_mgr:
+            for t in self.pos_mgr.trade_history[-10:]:
+                recent_trades.append({
+                    "symbol": t.get("symbol", ""),
+                    "strategy": t.get("strategy", ""),
+                    "direction": t.get("direction", ""),
+                    "entry": t.get("entry", 0),
+                    "exit": t.get("exit_price", 0),
+                    "pnl": t.get("pnl", 0),
+                    "reason": t.get("reason", "")
+                })
+
         state = {
             "running": running,
             "mode": self.mode,
@@ -167,7 +195,13 @@ class Orchestrator:
             "loop_count": loop_count,
             "last_execution": time.strftime("%Y-%m-%d %H:%M:%S"),
             "equity_history": equity_history or [balance],
-            "error": error
+            "error": error,
+            "active_symbols": self.symbols,
+            "scan_time": self.last_scan_time,
+            "top_scan_results": self.scan_results[:5],
+            "recent_trades": recent_trades,
+            "heartbeat": self.health.cycles,
+            "uptime": time.time() - getattr(self, 'start_time', time.time()),
         }
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
