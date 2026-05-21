@@ -1,0 +1,14 @@
+{
+  "running": true,
+  "mode": "testnet",
+  "balance": 100.0,
+  "equity": 100.0,
+  "pnl": 0.0,
+  "position": null,
+  "loop_count": 0,
+  "last_execution": "2026-05-21 01:41:12",
+  "equity_history": [
+    100.0
+  ],
+  "error": null
+}
