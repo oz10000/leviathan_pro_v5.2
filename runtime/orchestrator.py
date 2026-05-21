@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""
+LEVIATHAN ORCHESTRATOR – WORKFLOW-FIRST RUNTIME
+- Usa el RotationalEngine original
+- Snapshots atómicos + journaling
+- Reconciliación con exchange
+- Protección catastrófica en exchange
+- Escribe state.json para compatibilidad con dashboard
+- Bloqueo de concurrencia
+- Heartbeat y health
+"""
 import sys, os, time, json, signal, logging, hashlib, random
 from pathlib import Path
 
@@ -37,6 +47,8 @@ logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 EMERGENCY_STOP = RUNTIME_DIR / "emergency_stop.txt"
+STATE_FILE = RUNTIME_DIR / "state.json"
+
 
 class Orchestrator:
     def __init__(self):
@@ -57,6 +69,7 @@ class Orchestrator:
     def run(self):
         if EMERGENCY_STOP.exists():
             logging.critical("Emergency stop. Exiting.")
+            self._write_dashboard_state(balance=100.0, running=False)
             return
         if not self.lock.acquire():
             logging.warning("Lock held. Exiting.")
@@ -99,7 +112,7 @@ class Orchestrator:
                 trade = self.engine.cycle()
                 if trade:
                     order = self.router.send(
-                        trade["symbol"], "LONG" if trade["dir"]==1 else "SHORT",
+                        trade["symbol"], "LONG" if trade["dir"] == 1 else "SHORT",
                         trade["size"], trade["atr"], trade["leverage"]
                     )
                     if order and order.get("status") == "filled":
@@ -108,6 +121,15 @@ class Orchestrator:
 
                 self.hybrid_exit.manage(self.engine, self.pos_mgr, market_data)
                 self.persistence.save_snapshot(self.engine, self.pos_mgr)
+                self._write_dashboard_state(
+                    balance=self.engine.capital,
+                    equity=self.engine.capital,
+                    pnl=self.engine.capital - Config.INITIAL_CAPITAL,
+                    position=self.engine.position,
+                    loop_count=getattr(self.engine, '_loop_count', 0),
+                    equity_history=self.engine.equity_curve,
+                    running=True
+                )
                 self.journal.log_cycle(cycle, self.engine.capital)
                 self.health.record_cycle()
                 time.sleep(30)
@@ -115,16 +137,46 @@ class Orchestrator:
         except Exception as e:
             logging.error(f"Fatal orchestrator error: {e}", exc_info=True)
             self.health.record_event("orchestrator_error")
+            self._write_dashboard_state(balance=100.0, running=False, error=str(e))
         finally:
-            self.persistence.save_snapshot(self.engine, self.pos_mgr)
+            if self.engine:
+                self.persistence.save_snapshot(self.engine, self.pos_mgr)
+                self._write_dashboard_state(
+                    balance=self.engine.capital,
+                    equity=self.engine.capital,
+                    pnl=self.engine.capital - Config.INITIAL_CAPITAL,
+                    position=self.engine.position,
+                    loop_count=getattr(self.engine, '_loop_count', 0),
+                    equity_history=self.engine.equity_curve,
+                    running=True
+                )
             self.journal.close()
             self.health.record_event("orchestrator_end")
             self.lock.release()
+
+    def _write_dashboard_state(self, balance, equity=0, pnl=0, position=None,
+                               loop_count=0, equity_history=None, running=False, error=None):
+        """Escribe state.json para el dashboard Streamlit."""
+        state = {
+            "running": running,
+            "mode": self.mode,
+            "balance": balance,
+            "equity": equity or balance,
+            "pnl": pnl,
+            "position": position,
+            "loop_count": loop_count,
+            "last_execution": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "equity_history": equity_history or [balance],
+            "error": error
+        }
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
 
     def _get_symbols(self):
         if self.mode == "live":
             return fetch_top100_symbols()
         return fetch_testnet_symbols()
+
 
 if __name__ == "__main__":
     Orchestrator().run()
