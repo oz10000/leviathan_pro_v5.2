@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>DARDO · LEVIATHAN</title>
+<style>
+:root {
+  --bg: #050508;
+  --green: #00ff41;
+  --surface: #0a0a0f;
+  --text: #c8ffd0;
+  --dim: #557766;
+  --danger: #ff3322;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  font-family: 'Courier New', monospace;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+body::before {
+  content: '';
+  position: fixed; inset:0; pointer-events:none; z-index:0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,40,15,.35) 0%, transparent 60%),
+              radial-gradient(ellipse at 35% 55%, rgba(0,20,8,.25) 0%, transparent 50%);
+  animation: bgBreathe 8s ease-in-out infinite;
+}
+@keyframes bgBreathe { 0%,100%{opacity:.7} 25%{opacity:1} 50%{opacity:.6} 75%{opacity:.9} }
+body::after {
+  content: '';
+  position: fixed; inset:0; pointer-events:none; z-index:1; opacity:.025;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px;
+  animation: noiseShift 20s linear infinite;
+}
+@keyframes noiseShift { 0%{background-position:0 0} 100%{background-position:200px 200px} }
+.dardo-shell { position:relative; z-index:10; width:100%; max-width:500px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.core-container { position:relative; width:100%; aspect-ratio:1; max-width:400px; max-height:400px; }
+canvas { display:block; width:100%; height:100%; border-radius:50%; cursor:pointer; }
+.core-aura {
+  position:absolute; inset:-12%; border-radius:50%; pointer-events:none; z-index:-1;
+  background: radial-gradient(circle, rgba(0,255,65,.1) 0%, transparent 70%);
+  animation: auraPulse 4.5s ease-in-out infinite;
+}
+@keyframes auraPulse { 0%,100%{transform:scale(1);opacity:.6} 30%{transform:scale(1.06);opacity:1} 60%{transform:scale(.95);opacity:.4} }
+.metrics-panel { width:100%; max-width:400px; display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:0 2px; }
+.metric-entity {
+  background: var(--surface); border:1px solid rgba(0,255,65,.12); border-radius:10px;
+  padding:8px 10px; position:relative; overflow:hidden;
+  transition: border-color .6s, box-shadow .6s;
+}
+.metric-entity::before {
+  content:''; position:absolute; inset:0;
+  background: radial-gradient(ellipse at 30% 50%, rgba(0,255,65,.03) 0%, transparent 70%);
+  pointer-events:none; animation: shimmer 3s ease-in-out infinite;
+}
+@keyframes shimmer { 0%,100%{opacity:.3} 50%{opacity:.7} }
+.metric-label { font-size:8px; text-transform:uppercase; letter-spacing:1.5px; color:var(--dim); margin-bottom:2px; }
+.metric-value { font-size:16px; font-weight:700; color:var(--text); letter-spacing:.5px; }
+.metric-power-bar { height:2px; border-radius:1px; background:rgba(255,255,255,.03); margin:4px 0; overflow:hidden; }
+.metric-power-fill { height:100%; border-radius:1px; background:var(--green); transition: width 1.5s ease; }
+.metric-equivalence { font-size:7px; color:var(--dim); opacity:.6; }
+.biometric-indicator {
+  width:100%; max-width:400px; display:flex; align-items:center; gap:6px;
+  padding:4px 10px; font-size:8px; letter-spacing:1.5px; color:var(--dim); text-transform:uppercase;
+}
+.biometric-dot { width:5px; height:5px; border-radius:50%; background:var(--green); }
+.biometric-dot.degraded { background:var(--danger); animation: dotDeg .5s ease-in-out infinite; }
+@keyframes dotDeg { 0%,100%{opacity:1;transform:scale(1)} 30%{opacity:.2;transform:scale(.5)} 60%{opacity:1;transform:scale(1.5)} }
+.dardo-header { width:100%; max-width:400px; display:flex; justify-content:space-between; padding:2px 6px; }
+.dardo-logo { font-size:10px; letter-spacing:3px; color:var(--dim); }
+.dardo-status { font-size:7px; letter-spacing:2px; }
+@media (max-width:370px) {
+  .metrics-panel { grid-template-columns:1fr 1fr; gap:4px; }
+  .metric-entity { padding:6px 7px; }
+  .metric-value { font-size:14px; }
+  .metric-label { font-size:7px; }
+  .core-container { max-width:280px; max-height:280px; }
+}
+</style>
+</head>
+<body>
+<div class="dardo-shell">
+  <div class="dardo-header">
+    <span class="dardo-logo">LEVIATHAN · DARDO</span>
+    <span class="dardo-status" id="statusText" style="color:#00ff41">● ACTIVO</span>
+  </div>
+  <div class="core-container">
+    <div class="core-aura"></div>
+    <canvas id="c"></canvas>
+  </div>
+  <div class="biometric-indicator">
+    <span class="biometric-dot" id="bioDot"></span>
+    <span id="bioLabel">ESTABILIDAD BIOMÉTRICA</span>
+    <span style="margin-left:auto;font-size:7px" id="bioValue">96%</span>
+  </div>
+  <div class="metrics-panel" id="mp">
+    <div class="metric-entity"><div class="metric-label">💰 Capital</div><div class="metric-value" id="v1">$100.00</div><div class="metric-power-bar"><div class="metric-power-fill" id="b1" style="width:50%"></div></div><div class="metric-equivalence">≡ en juego</div></div>
+    <div class="metric-entity"><div class="metric-label">📈 PnL</div><div class="metric-value" id="v2">+0.00</div><div class="metric-power-bar"><div class="metric-power-fill" id="b2" style="width:50%"></div></div><div class="metric-equivalence">≡ rendimiento</div></div>
+    <div class="metric-entity"><div class="metric-label">🧠 Señal</div><div class="metric-value" id="v3">--</div><div class="metric-power-bar"><div class="metric-power-fill" id="b3" style="width:0%"></div></div><div class="metric-equivalence">≡ oportunidad</div></div>
+    <div class="metric-entity"><div class="metric-label">🔄 Ciclos</div><div class="metric-value" id="v4">0</div><div class="metric-power-bar"><div class="metric-power-fill" id="b4" style="width:0%"></div></div><div class="metric-equivalence">≡ actividad</div></div>
+  </div>
+</div>
+<script>
+// ═══════════════════════════════════════
+// LEVIATHAN · DARDO — FRACTAL CORE v2.1
+// ═══════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let dpr = Math.min(devicePixelRatio||1,2), W, H, cx, cy, base;
+let t = 0, lt = performance.now();
+let bio = 0.04, bioTarget = 0.04, bioV = 0;
+let m = [0.5,0.5,0.3,0.3], mT = [...m];
+let noiseCanvas;
+
+// ════════════════════════ DATOS REALES ════════════════════
+let liveState = window.__LEVIATHAN_STATE__ || {};
+function updateFromLiveState() {
+  if (!liveState || !Object.keys(liveState).length) return;
+  const bal = liveState.balance || 100;
+  const pnl = liveState.pnl || 0;
+  const loops = liveState.loop_count || 0;
+  const signal = liveState.signal || (liveState.position ? (liveState.position.dir==1?'LONG':'SHORT') : 'NONE');
+  mT[0] = Math.min(0.95, bal / 200);   // capital ~ 200 = full bar
+  mT[1] = Math.min(0.95, 0.5 + pnl / 40); // PnL scaling
+  mT[2] = signal !== 'NONE' ? 0.8 : 0.2;
+  mT[3] = Math.min(0.95, loops / 30);
+  if (pnl < 0) bioTarget = Math.min(0.6, Math.abs(pnl)/20);
+  else if (loops < 3) bioTarget = 0.1;
+  else bioTarget = 0.04;
+}
+setInterval(updateFromLiveState, 5000); // actualiza cada 5 segundos con los datos reales
+
+function resize() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  const s = Math.min(r.width, r.height);
+  canvas.width = s*dpr; canvas.height = s*dpr;
+  canvas.style.width = s+'px'; canvas.style.height = s+'px';
+  W=canvas.width; H=canvas.height; cx=W/2; cy=H/2; base=Math.min(W,H)*.22;
+  noiseCanvas = document.createElement('canvas'); noiseCanvas.width=128; noiseCanvas.height=128;
+  const nc = noiseCanvas.getContext('2d'), id = nc.createImageData(128,128);
+  for(let i=0;i<id.data.length;i+=4){const v=Math.random()*16; id.data[i]=v; id.data[i+1]=v+3; id.data[i+2]=v; id.data[i+3]=255}
+  nc.putImageData(id,0,0);
+}
+
+function core(ox,oy,s,ph,alpha,bs) {
+  const off = s*.35, rot = Math.sin(ph*1.3)*.04+Math.cos(ph*.7)*.03;
+  const go = bs>.3 ? Math.sin(ph*37)*bs*s*.08 : 0;
+  ctx.save(); ctx.translate(ox,oy); ctx.rotate(rot);
+  const a = alpha*(.7+Math.sin(ph*.9)*.3);
+  const G = `rgba(0,255,65,${a})`, gG = `rgba(0,255,65,${a*.5})`;
+  const B = `rgba(5,5,8,${a*.9})`, dG = `rgba(0,40,15,${a*.7})`;
+  const inv = Math.sin(ph*.6)>.1;
+  const sq = (x,y,f,s)=> {
+    ctx.fillStyle=f; ctx.strokeStyle=s; ctx.lineWidth=1;
+    ctx.shadowBlur=6+Math.sin(ph)*3; ctx.beginPath();
+    ctx.rect(x,y,s*.48,s*.48); ctx.fill(); ctx.stroke(); ctx.shadowBlur=0;
+  };
+  sq(-off+go, -off-s*.15, inv?B:dG, G);
+  sq(off-s*.48-go, -off-s*.15, inv?dG:B, gG);
+  sq(-off-go*.7, off+s*.15-s*.48, inv?B:dG, gG);
+  sq(off-s*.48+go*.5, off+s*.15-s*.48, inv?dG:B, G);
+  ctx.restore();
+}
+
+function drawFractal(time,bs) {
+  const b1=1+(Math.sin(time*.7)*.09), b2=1+(Math.sin(time*.85+1.2)*.07);
+  const b3=1+(Math.sin(time*.65+2.5)*.06), b4=1+(Math.sin(time*.78+3.8)*.05);
+  const s=base, jx=Math.sin(time*13.7)*bs*3, jy=Math.cos(time*11.3)*bs*3;
+  ctx.save(); ctx.translate(cx+jx, cy+jy);
+  for(let a=0;a<4;a++){const ang=a*Math.PI/2+time*.08; core(Math.cos(ang)*s*2.2*(1+b4*.3),Math.sin(ang)*s*2.2*(1+b4*.3),s*.28*b4,time*1.4+a,.06,bs)}
+  for(let a=0;a<6;a++){const ang=a*Math.PI/3-time*.06; core(Math.cos(ang)*s*1.5*(1+b3*.25),Math.sin(ang)*s*1.5*(1+b3*.25),s*.45*b3,time*1.15+a*.7,.12,bs)}
+  for(let a=0;a<3;a++){const ang=a*Math.PI*2/3+time*.1; core(Math.cos(ang)*s*.85*(1+b2*.2),Math.sin(ang)*s*.85*(1+b2*.2),s*.62*b2,time*1.05+a,.2,bs)}
+  core(0,0,s*b1,time,.85,bs);
+  ctx.restore();
+}
+
+function particles(time) {
+  const n=16, r=base*2.4;
+  for(let i=0;i<n;i++) {
+    const ang=i/n*Math.PI*2+time*.15, rad=r*(.5+.5*Math.sin(time*.4+i*.9));
+    const px=cx+Math.cos(ang)*rad, py=cy+Math.sin(ang)*rad;
+    ctx.fillStyle=`rgba(0,255,65,${.13+Math.sin(time*1.5+i)*.08})`;
+    ctx.shadowColor=`rgba(0,255,65,.2)`; ctx.shadowBlur=3;
+    ctx.beginPath(); ctx.arc(px,py,1+Math.sin(time*2+i)*.6,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+  }
+}
+
+function bgWaves(time) {
+  for(let w=0;w<3;w++) {
+    const rad=base*(1.8+w*.9)*(1+Math.sin(time*.35+w)*.15);
+    ctx.strokeStyle=`rgba(0,255,65,${Math.max(.01,.04-w*.01)})`;
+    ctx.lineWidth=.4+w*.2; ctx.setLineDash([8,16+w*10]); ctx.lineDashOffset=time*(20+w*8);
+    ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+function centralGlow(time,bs) {
+  const g=ctx.createRadialGradient(cx,cy,base*.3,cx,cy,base*2.2*(1+Math.sin(time*.55)*.25));
+  const al=.06+Math.sin(time*.7)*.03-bs*.03;
+  g.addColorStop(0,`rgba(0,255,65,${al*2})`); g.addColorStop(.4,`rgba(0,255,65,${al})`); g.addColorStop(1,'rgba(0,255,65,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+
+function bioNoise(bs) {
+  if(bs<.04)return;
+  if(noiseCanvas && bs>.06) {
+    ctx.globalAlpha=bs*.22; const sc=1.5+bs*2;
+    ctx.drawImage(noiseCanvas, cx-W/sc/2+Math.sin(t*23)*bs*35, cy-H/sc/2+Math.cos(t*19)*bs*35, W/sc, H/sc);
+    ctx.globalAlpha=1;
+  }
+  if(bs>.18) {
+    const n=Math.floor(bs*10);
+    for(let i=0;i<n;i++) {
+      const gy=Math.random()*H;
+      ctx.fillStyle=`rgba(0,0,0,${Math.random()*bs})`; ctx.fillRect(0,gy,W,1+Math.random()*2);
+      if(Math.random()<.25) { ctx.fillStyle=`rgba(0,255,65,${Math.random()*bs*.4})`; ctx.fillRect(Math.random()*W*.6,gy,W*.3*Math.random(),1); }
+    }
+  }
+}
+
+function updateDOM() {
+  const el = id=>document.getElementById(id);
+  const bioDot=el('bioDot'), bioLabel=el('bioLabel'), bioValue=el('bioValue'), statusText=el('statusText');
+  if(bio>.35) {
+    bioDot.classList.add('degraded'); bioLabel.textContent='DEGRADACIÓN ACTIVA';
+    bioValue.textContent=Math.round(100-bio*100)+'%'; statusText.textContent='● INESTABLE'; statusText.style.color='#ff5533';
+  } else if(bio>.15) {
+    bioDot.classList.remove('degraded'); bioLabel.textContent='ESTABILIDAD PARCIAL';
+    bioValue.textContent=Math.round(100-bio*100)+'%'; statusText.textContent='● PARCIAL'; statusText.style.color='#ffaa33';
+  } else {
+    bioDot.classList.remove('degraded'); bioLabel.textContent='ESTABILIDAD BIOMÉTRICA';
+    bioValue.textContent=Math.round(100-bio*100)+'%'; statusText.textContent='● ACTIVO'; statusText.style.color='#00ff41';
+  }
+  const vals=[el('v1'),el('v2'),el('v3'),el('v4')];
+  const bars=[el('b1'),el('b2'),el('b3'),el('b4')];
+  // m[0]=capital, m[1]=pnl, m[2]=signal, m[3]=cycles
+  const cap = Math.round(m[0]*200);
+  vals[0].textContent = `$${cap.toLocaleString('es-AR')}`;
+  const pnlVal = (m[1]-0.5)*40;
+  vals[1].textContent = `${pnlVal>=0?'+':''}${pnlVal.toFixed(2)}`;
+  vals[2].textContent = m[2]>0.6 ? (m[2]>0.8?'LONG':'SHORT') : '--';
+  vals[3].textContent = Math.round(m[3]*30);
+  bars[0].style.width = (m[0]*100)+'%';
+  bars[1].style.width = (m[1]*100)+'%';
+  bars[2].style.width = (m[2]*100)+'%';
+  bars[3].style.width = (m[3]*100)+'%';
+  for(let i=0;i<4;i++) bars[i].style.boxShadow=bio>.3?'0 0 6px rgba(255,80,30,.4)':'0 0 8px rgba(0,255,65,.35)';
+  document.querySelectorAll('.metric-entity').forEach(el=>{
+    el.style.borderColor=bio>.4?'rgba(255,60,30,.3)':bio>.2?'rgba(255,170,50,.25)':'rgba(0,255,65,.12)';
+  });
+}
+
+function render(ts) {
+  const dt=Math.min((ts-lt)/1000,.1); lt=ts; t+=dt;
+  if(Math.abs(bioTarget-bio)>.001){bioV+=(bioTarget-bio)*.8*dt*3; bioV*=Math.exp(-2.5*dt); bio+=bioV*dt; bio=Math.max(0,Math.min(1,bio))}
+  for(let i=0;i<4;i++){mT[i]=Math.max(.05,Math.min(.95,mT[i])); m[i]+=(mT[i]-m[i])*2*dt}
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#050508'; ctx.fillRect(0,0,W,H);
+  bgWaves(t); centralGlow(t,bio); particles(t); drawFractal(t,bio); bioNoise(bio);
+  updateDOM();
+  requestAnimationFrame(render);
+}
+
+canvas.addEventListener('pointermove',e=>{
+  const r=canvas.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+  bioTarget=Math.max(.03,.35-Math.sqrt((px-.5)**2+(py-.5)**2)*.5);
+});
+canvas.addEventListener('pointerleave',()=>{ bioTarget=.04 });
+canvas.addEventListener('pointerdown',()=>{ bioTarget=Math.max(.02,bio-.25) });
+canvas.addEventListener('pointerup',()=>{ bioTarget=.04 });
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault(); const r=canvas.getBoundingClientRect();
+  bioTarget=Math.max(.02,bio-.3);
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault(); const r=canvas.getBoundingClientRect();
+  const px=(e.touches[0].clientX-r.left)/r.width, py=(e.touches[0].clientY-r.top)/r.height;
+  bioTarget=Math.max(.03,.4-Math.sqrt((px-.5)**2+(py-.5)**2)*.55);
+},{passive:false});
+canvas.addEventListener('touchend',()=>{ bioTarget=.04 });
+
+window.addEventListener('resize',()=>{ dpr=Math.min(devicePixelRatio||1,2); resize(); });
+setInterval(()=>{ if(!document.pointermove) bioTarget=Math.max(.03,Math.min(.55,bio+(Math.random()-.45)*.18)) }, 8000+Math.random()*6000);
+
+resize(); requestAnimationFrame(render);
+</script>
+</body>
+</html>
