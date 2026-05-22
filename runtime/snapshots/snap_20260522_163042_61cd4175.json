@@ -1,16 +1,13 @@
 {
-  "running": true,
-  "mode": "testnet",
   "balance": 100.0,
+  "peak_capital": 100.0,
   "equity": 100.0,
   "pnl": 0.0,
   "position": null,
   "loop_count": 0,
-  "last_execution": "2026-05-22 16:30:42",
   "equity_history": [
     100.0
   ],
-  "error": null,
   "active_symbols": [
     "BTC",
     "ETH",
@@ -23,9 +20,6 @@
     "LTC",
     "TRX"
   ],
-  "scan_time": null,
-  "top_scan_results": [],
-  "recent_trades": [],
-  "heartbeat": 0,
-  "uptime": -4.76837158203125e-07
+  "trades_count": 0,
+  "timestamp": 1779467442.7119977
 }
