@@ -1,6 +1,12 @@
-"""
-Market Data Fetcher – Resilient, retry, timeout, symbol isolation.
-"""
+
+import os
+import time
+import random
+import logging
+import requests
+import pandas as pd
+from typing import Dict, List, Tuple
+
 import time, random, logging, requests
 import pandas as pd
 from typing import Dict, List, Tuple
