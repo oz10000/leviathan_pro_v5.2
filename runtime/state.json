@@ -6,7 +6,7 @@
   "pnl": 0.0,
   "position": null,
   "loop_count": 0,
-  "last_execution": "2026-05-22 20:12:52",
+  "last_execution": "2026-05-22 21:27:44",
   "equity_history": [
     100.0
   ],
@@ -23,14 +23,14 @@
     "LTC",
     "TRX"
   ],
-  "scan_time": "2026-05-22 20:12:52",
-  "scan_duration": 116.5479006767273,
+  "scan_time": "2026-05-22 21:27:44",
+  "scan_duration": 114.77714586257935,
   "symbols_scanned": 10,
   "valid_symbols": 0,
   "failed_symbols": 10,
   "top_scan_results": [],
   "recent_trades": [],
   "current_action": "Waiting for next cycle (no data)",
-  "heartbeat": 3,
-  "uptime": 570.917934179306
+  "heartbeat": 2,
+  "uptime": 422.39487385749817
 }
