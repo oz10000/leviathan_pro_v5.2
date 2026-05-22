@@ -12,6 +12,17 @@ import sys, os, time, json, signal, logging, hashlib, random, traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import logging.handlers
+
+# Reemplazar la configuración del logger actual por una con rotación horaria
+LOG_FILE_BASE = RUNTIME_DIR / "logs" / "engine.log"
+handler = logging.handlers.TimedRotatingFileHandler(
+    LOG_FILE_BASE, when="H", interval=1, backupCount=168  # guarda 7 días
+)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logging.getLogger().handlers = [handler]
+logging.getLogger().setLevel(logging.INFO)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EDGE_CORE = REPO_ROOT / "leviathan_edge_core"
 sys.path.insert(0, str(REPO_ROOT))
