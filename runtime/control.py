@@ -13,13 +13,11 @@ DEFAULT_CONTROL = {
 }
 
 def load_control():
-    """Carga el estado de control. Si no existe, crea uno por defecto."""
     if not os.path.exists(CONTROL_PATH):
         return dict(DEFAULT_CONTROL)
     try:
         with open(CONTROL_PATH, "r") as f:
             control = json.load(f)
-        # Rellenar campos faltantes
         for k, v in DEFAULT_CONTROL.items():
             if k not in control:
                 control[k] = v
@@ -28,7 +26,6 @@ def load_control():
         return dict(DEFAULT_CONTROL)
 
 def save_control(control: dict):
-    """Guarda el estado de control de forma atómica."""
     control["last_modified"] = datetime.now(timezone.utc).isoformat()
     tmp = CONTROL_PATH + ".tmp"
     with open(tmp, "w") as f:
