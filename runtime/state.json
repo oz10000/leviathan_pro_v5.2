@@ -1,36 +1,24 @@
 {
-  "running": true,
-  "mode": "testnet",
   "balance": 100.0,
   "equity": 100.0,
-  "pnl": 0.0,
   "position": null,
-  "loop_count": 0,
-  "last_execution": "2026-05-23 12:52:31",
-  "equity_history": [
-    100.0
-  ],
-  "error": null,
-  "active_symbols": [
-    "BTC",
-    "ETH",
-    "SOL",
-    "BNB",
-    "XRP",
-    "DOGE",
-    "ADA",
-    "LINK",
-    "LTC",
-    "TRX"
-  ],
-  "scan_time": "2026-05-23 12:52:31",
-  "scan_duration": 126.14449000358582,
-  "symbols_scanned": 10,
-  "valid_symbols": 0,
-  "failed_symbols": 10,
-  "top_scan_results": [],
-  "recent_trades": [],
-  "current_action": "Waiting for next cycle (no data)",
-  "heartbeat": 2,
-  "uptime": 438.04310154914856
+  "loop_count": 1,
+  "last_execution": "2026-05-23T21:36:29.646174+00:00",
+  "daps_x": 0.0,
+  "equilibrium": 1.0,
+  "daps_balance": 1.0,
+  "open_positions": {},
+  "status": "RUNNING",
+  "last_signal": null,
+  "meta": {
+    "winrate": 0.0,
+    "profit_factor": 0.0,
+    "drawdown": 0.0
+  },
+  "breaker": {
+    "loss_streak": 0,
+    "peak_equity": null,
+    "cooldown_until": 0.0,
+    "cooldown_active": false
+  }
 }
