@@ -6,3 +6,5 @@ exports/
 database/*.db
 *.zip
 leviathan_v52_streamlit/
+!runtime/logs/
+!.gitkeep
