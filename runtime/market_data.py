@@ -1,85 +1,78 @@
-
 import os
-import time
-import random
+import pandas as pd
 import logging
-import requests
-import pandas as pd
-from typing import Dict, List, Tuple
 
-import time, random, logging, requests
-import pandas as pd
-from typing import Dict, List, Tuple
+logger = logging.getLogger("leviathan_runtime.cache")
 
-from core.feature_engine import compute_features
-from runtime.okx_client import OKXClient
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-logger = logging.getLogger("market_data")
 
-class MarketDataFetcher:
-    def __init__(self):
-        self.client = OKXClient(
-            api_key=os.getenv("OKX_API_KEY", ""),
-            secret_key=os.getenv("OKX_SECRET_KEY", ""),
-            passphrase=os.getenv("OKX_PASSPHRASE", ""),
-            testnet=(os.getenv("LEVIATHAN_MODE", "testnet") == "testnet")
-        )
-        self.error_counts: Dict[str, int] = {}
-        self.latency_sum = 0.0
-        self.latency_count = 0
+def _cache_path(symbol: str, timeframe: str) -> str:
+    tf = timeframe.lower().replace(" ", "")
+    return os.path.join(CACHE_DIR, f"{symbol}_{tf}.parquet")
 
-    def fetch_with_retry(self, symbols: List[str], max_retries: int = 3, timeout: int = 10) -> Tuple[Dict, List[str]]:
-        """
-        Descarga velas de todos los símbolos con reintentos y timeout.
-        Retorna (market_data, failed_symbols).
-        """
-        market_data = {}
-        failed_symbols = []
 
-        for sym in symbols:
-            df = self._fetch_symbol_with_retry(sym, max_retries, timeout)
-            if df is not None and not df.empty:
-                market_data[sym] = df
-            else:
-                failed_symbols.append(sym)
+def load_or_fetch(symbol: str, timeframe: str, fetch_func, limit: int = 200):
+    """
+    Carga datos desde caché Parquet. Si no existe o faltan velas recientes,
+    descarga únicamente lo necesario y actualiza el archivo.
 
-        return market_data, failed_symbols
+    Parámetros
+    ----------
+    symbol    : str
+    timeframe : str  (ej. '5m', '15m', '1H')
+    fetch_func: callable(symbol, timeframe, limit) -> DataFrame
+                Debe retornar un DataFrame con columnas:
+                ts, open, high, low, close, vol
+    limit     : int
+                Número máximo de velas a solicitar a la API.
+    """
+    path = _cache_path(symbol, timeframe)
 
-    def _fetch_symbol_with_retry(self, symbol: str, max_retries: int, timeout: int) -> pd.DataFrame:
-        """Descarga un símbolo con backoff exponencial y timeout."""
-        for attempt in range(1, max_retries + 1):
-            try:
-                start = time.time()
-                # Usamos el cliente OKX con timeout
-                df = self.client.get_candles(symbol, "5m", 100)
-                latency = time.time() - start
-                self.latency_sum += latency
-                self.latency_count += 1
+    # --- Intentar cargar caché existente -----------------------------------
+    if os.path.exists(path):
+        try:
+            df_cached = pd.read_parquet(path)
+            if not df_cached.empty and 'ts' in df_cached.columns:
+                df_cached['ts'] = pd.to_datetime(df_cached['ts'])
+                last_ts = df_cached['ts'].max()
 
-                if df is None or df.empty:
-                    raise ValueError("Empty DataFrame")
+                # Descargar velas nuevas
+                df_new = fetch_func(symbol, timeframe, limit=limit)
+                if df_new is None or df_new.empty:
+                    logger.warning(
+                        "Sin datos nuevos para %s %s, usando caché", symbol, timeframe
+                    )
+                    return df_cached
 
-                # Validación de columnas
-                if "volume" not in df.columns and "vol" in df.columns:
-                    df.rename(columns={"vol": "volume"}, inplace=True)
-                required_cols = ["open", "high", "low", "close", "volume"]
-                if not all(c in df.columns for c in required_cols):
-                    raise ValueError(f"Missing columns in {symbol}")
+                df_new['ts'] = pd.to_datetime(df_new['ts'])
+                df_fresh = df_new[df_new['ts'] > last_ts]
 
-                # Calcular features (ATR, RSI, scores, etc.)
-                df = compute_features(df)
+                if not df_fresh.empty:
+                    df_combined = pd.concat([df_cached, df_fresh], ignore_index=True)
+                    df_combined = df_combined.drop_duplicates(subset=['ts'])
+                    df_combined = df_combined.sort_values('ts')
+                else:
+                    df_combined = df_cached
 
-                if df.empty or len(df) < 20:
-                    raise ValueError(f"Not enough data for {symbol}")
+                # Limitar tamaño máximo del caché
+                if len(df_combined) > 500:
+                    df_combined = df_combined.iloc[-500:]
 
-                self.error_counts.pop(symbol, None)
-                logger.info(f"[SCAN] {symbol} success latency={latency:.2f}s rows={len(df)}")
-                return df
+                df_combined.to_parquet(path, index=False)
+                return df_combined
 
-            except Exception as e:
-                logger.warning(f"[SCAN] {symbol} attempt {attempt} failed: {e}")
-                self.error_counts[symbol] = self.error_counts.get(symbol, 0) + 1
-                time.sleep(random.uniform(1, 3) * attempt)  # backoff
+        except Exception as e:
+            logger.error("Error leyendo caché %s: %s. Redescargando.", path, e)
 
-        logger.error(f"[SCAN] {symbol} FAILED after {max_retries} attempts")
-        return pd.DataFrame()
+    # --- Descarga completa (primera vez o tras error) -----------------------
+    df = fetch_func(symbol, timeframe, limit=limit)
+    if df is not None and not df.empty:
+        df['ts'] = pd.to_datetime(df['ts'])
+        df = df.drop_duplicates(subset=['ts']).sort_values('ts')
+        if len(df) > 500:
+            df = df.iloc[-500:]
+        df.to_parquet(path, index=False)
+
+    return df
