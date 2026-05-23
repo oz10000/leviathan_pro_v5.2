@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Leviathan V5.2 DAPS CAUSAL – Runtime Orchestrator
-Ejecuta el bucle principal de trading con persistencia, control operacional
-y recuperación de estado.
+Bucle principal de trading con persistencia, control operacional y recuperación.
 """
 
 import sys
@@ -13,14 +12,14 @@ import numpy as np
 from datetime import datetime, timezone
 
 # ------------------------------------------------------------
-# Fijar PYTHONPATH para encontrar los módulos del Edge Core
+# Ajuste de PYTHONPATH para encontrar los módulos del Edge Core
 # ------------------------------------------------------------
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "leviathan_edge_core"))
 
 # ------------------------------------------------------------
-# Importaciones del Edge Core y runtime
+# Importaciones (Edge Core + runtime)
 # ------------------------------------------------------------
 from config import Config
 from core.feature_engine import compute_features
@@ -86,6 +85,7 @@ def main():
     engine.daps_equilibrium.equilibrium_score = state["equilibrium"]
     engine.daps_balance.balance = state.get("daps_balance", 1.0)
     engine._loop_count = state["loop_count"]
+    # Atributo 'status' puede no existir en versiones anteriores; usamos getattr seguro
     if hasattr(engine, "status"):
         engine.status = state.get("status", "RUNNING")
 
@@ -209,15 +209,16 @@ def main():
                     current_prices[sym] = float(df5["close"].iloc[-1])
             save_state(engine, pos_mgr, current_prices, breaker)
 
-            # Métricas del ciclo
+            # Métricas del ciclo (con getattr para atributos opcionales)
             signals_gen = 1 if trade else 0
             signals_filt = getattr(engine, "_signals_filtered", 0)
+            engine_status = getattr(engine, "status", "RUNNING")
             metrics.end_cycle(
                 signals_generated=signals_gen,
                 signals_filtered=signals_filt,
                 open_positions=pos_mgr.active_count(),
                 circuit_breaker_active=not breaker.can_trade(),
-                stat_guard_block=(engine.status == "STAT_GUARD_BLOCK"),
+                stat_guard_block=(engine_status == "STAT_GUARD_BLOCK"),
                 safe_mode=(engine.perf_tracker.realtime_sharpe() < 1.5)
             )
 
