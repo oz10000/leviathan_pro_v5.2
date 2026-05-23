@@ -3,6 +3,7 @@ import json
 import os
 import csv
 import logging
+import numpy as np
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
@@ -30,7 +31,7 @@ STATE_PATH = os.path.join(os.path.dirname(__file__), "state.json")
 TRADES_PATH = os.path.join(os.path.dirname(__file__), "trades.csv")
 
 # ---------------------------------------------------------------------------
-# ESTADO POR DEFECTO (deep copy para seguridad)
+# ESTADO POR DEFECTO
 # ---------------------------------------------------------------------------
 DEFAULT_STATE = {
     "balance": 10000.0,
@@ -56,6 +57,28 @@ DEFAULT_STATE = {
         "cooldown_active": False
     }
 }
+
+
+# ---------------------------------------------------------------------------
+# CONVERSIÓN SEGURA A TIPOS NATIVOS DE PYTHON
+# ---------------------------------------------------------------------------
+def convert_to_native(obj):
+    """
+    Convierte recursivamente np.generic, np.ndarray y tipos pandas
+    a tipos nativos de Python para serialización JSON segura.
+    """
+    if isinstance(obj, (np.generic,)):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_to_native(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_native(i) for i in obj]
+    elif hasattr(obj, "dtype"):  # pandas Timestamp, etc.
+        return str(obj)
+    return obj
+
 
 # ---------------------------------------------------------------------------
 # FUNCIONES DE PERSISTENCIA
@@ -101,30 +124,30 @@ def save_state(engine, pos_mgr, current_prices=None, breaker=None):
         unreal_pnl = pos_mgr.total_unrealized_pnl(current_prices) if current_prices else 0.0
     except Exception:
         unreal_pnl = 0.0
-    equity = engine.capital + unreal_pnl
+    equity = float(engine.capital) + float(unreal_pnl)
 
     state = {
         "balance": float(engine.capital),
         "equity": float(equity),
-        "position": engine.position,
-        "loop_count": getattr(engine, "_loop_count", 0),
+        "position": convert_to_native(engine.position) if engine.position else None,
+        "loop_count": int(getattr(engine, "_loop_count", 0)),
         "last_execution": datetime.now(timezone.utc).isoformat(),
         "daps_x": float(engine.daps.x),
         "equilibrium": float(engine.daps_equilibrium.equilibrium_score),
         "daps_balance": float(getattr(engine.daps_balance, "balance", 1.0)),
         "open_positions": {
             sym: {
-                "entry": p.get("entry"),
+                "entry": float(p.get("entry", 0.0)),
                 "direction": "LONG" if p.get("dir") == 1 else "SHORT",
-                "size": p.get("size"),
-                "leverage": p.get("leverage"),
-                "atr": p.get("atr"),
-                "meta_score": p.get("meta_score")
+                "size": float(p.get("size", 0.0)),
+                "leverage": float(p.get("leverage", 1.0)),
+                "atr": float(p.get("atr", 0.0)),
+                "meta_score": float(p.get("meta_score", 0.0))
             }
             for sym, p in pos_mgr.positions.items()
         },
         "status": getattr(engine, "status", "RUNNING") if hasattr(engine, "status") else "RUNNING",
-        "last_signal": getattr(engine, "last_signal", None),
+        "last_signal": convert_to_native(getattr(engine, "last_signal", None)),
         "meta": {
             "winrate": float(getattr(engine, "winrate", 0.0)),
             "profit_factor": float(getattr(engine, "profit_factor", 0.0)),
@@ -133,10 +156,13 @@ def save_state(engine, pos_mgr, current_prices=None, breaker=None):
         "breaker": breaker.status() if breaker else DEFAULT_STATE["breaker"]
     }
 
+    # Convertir recursivamente cualquier np.generic restante
+    state = convert_to_native(state)
+
     tmp_path = STATE_PATH + ".tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, default=str)
+            json.dump(state, f, indent=2)
         os.replace(tmp_path, STATE_PATH)          # atómico
         logger.debug("Estado guardado (atómico).")
     except Exception as e:
@@ -158,14 +184,14 @@ def append_trade(trade_data: dict):
                 "timestamp": trade_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
                 "symbol": trade_data.get("symbol", ""),
                 "side": trade_data.get("side", ""),
-                "entry": trade_data.get("entry", 0.0),
-                "exit": trade_data.get("exit", 0.0),
-                "pnl": trade_data.get("pnl", 0.0),
-                "meta_score": trade_data.get("meta_score", 0.0),
+                "entry": f"{float(trade_data.get('entry', 0.0)):.4f}",
+                "exit": f"{float(trade_data.get('exit', 0.0)):.4f}",
+                "pnl": f"{float(trade_data.get('pnl', 0.0)):.4f}",
+                "meta_score": f"{float(trade_data.get('meta_score', 0.0)):.4f}",
                 "strategy": trade_data.get("strategy", "unknown")
             })
         logger.info("Trade registrado: %s %s PnL=%.2f",
                      trade_data.get("symbol"), trade_data.get("side"),
-                     trade_data.get("pnl", 0.0))
+                     float(trade_data.get("pnl", 0.0)))
     except Exception as e:
         logger.error("Error al guardar trade: %s", e)
