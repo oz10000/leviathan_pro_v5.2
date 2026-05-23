@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -95,18 +96,22 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
-      - name: Pull latest changes before commit
+      - name: Commit and push state changes (rebase safe)
         if: always()
         run: |
           git config user.name "Leviathan Bot"
           git config user.email "bot@leviathan.local"
+          
+          # Traer los cambios remotos e integrarlos
           git pull --rebase origin main
-
-      - name: Commit and push state changes
-        if: always()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🔄 Runtime persist [skip ci]"
-          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/"
-          commit_user_name: "Leviathan Bot"
-          commit_user_email: "bot@leviathan.local"
+          
+          # Añadir solo los archivos de estado (si existen)
+          git add runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ 2>/dev/null || true
+          
+          # Solo commit si hay cambios
+          if git diff --cached --quiet; then
+            echo "No hay cambios que commitear."
+          else
+            git commit -m "🔄 Runtime persist [skip ci]"
+            git push origin main
+          fi
