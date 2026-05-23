@@ -1,7 +1,27 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Leviathan V5.2 DAPS CAUSAL – Runtime Orchestrator
+Ejecuta el bucle principal de trading con persistencia, control operacional
+y recuperación de estado.
+"""
+
+import sys
 import os
 import time
 import numpy as np
 from datetime import datetime, timezone
+
+# ------------------------------------------------------------
+# Fijar PYTHONPATH para encontrar los módulos del Edge Core
+# ------------------------------------------------------------
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "leviathan_edge_core"))
+
+# ------------------------------------------------------------
+# Importaciones del Edge Core y runtime
+# ------------------------------------------------------------
 from config import Config
 from core.feature_engine import compute_features
 from strategies.expansion_strategy import ExpansionStrategy
@@ -26,7 +46,8 @@ MAX_CYCLES = int(os.getenv("MAX_CYCLES", 8))
 def main():
     # ── Cargar estado previo ──────────────────────────────────
     state = load_state()
-    logger.info("Estado cargado: loop=%d, balance=%.2f", state["loop_count"], state["balance"])
+    logger.info("Estado cargado: loop=%d, balance=%.2f",
+                state["loop_count"], state["balance"])
 
     # ── Universo y datos (usa caché incremental) ───────────────
     universe = fetch_top100_symbols()
@@ -58,7 +79,7 @@ def main():
 
     # ── Motor con capital restaurado ──────────────────────────
     engine = RotationalEngine(strategies, universe, state["balance"], data)
-    if state["position"] is not None:
+    if state.get("position") is not None:
         engine.position = state["position"]
         logger.info("Posición restaurada desde estado previo.")
     engine.daps.x = state["daps_x"]
@@ -76,11 +97,11 @@ def main():
         pos_mgr.positions[sym] = {
             "symbol": sym,
             "dir": 1 if pdata.get("direction") == "LONG" else -1,
-            "entry": pdata.get("entry"),
-            "size": pdata.get("size"),
-            "leverage": pdata.get("leverage"),
-            "atr": pdata.get("atr"),
-            "meta_score": pdata.get("meta_score"),
+            "entry": float(pdata.get("entry", 0.0)),
+            "size": float(pdata.get("size", 0.0)),
+            "leverage": float(pdata.get("leverage", 1.0)),
+            "atr": float(pdata.get("atr", 0.0)),
+            "meta_score": float(pdata.get("meta_score", 0.0)),
             "entry_time": datetime.now(timezone.utc).timestamp()
         }
     logger.info("Posiciones restauradas: %s", list(pos_mgr.positions.keys()))
@@ -95,7 +116,7 @@ def main():
         b = state["breaker"]
         breaker.loss_streak = b.get("loss_streak", 0)
         breaker.peak_equity = b.get("peak_equity")
-        breaker.cooldown_until = b.get("cooldown_until", 0)
+        breaker.cooldown_until = b.get("cooldown_until", 0.0)
 
     # ── Métricas de observabilidad ────────────────────────────
     metrics = RuntimeMetrics()
@@ -136,7 +157,8 @@ def main():
                     )
                     if order.get("status") == "filled":
                         pos_mgr.open(trade)
-                        logger.info("Trade abierto: %s %s", trade["symbol"], trade["strategy"])
+                        logger.info("Trade abierto: %s %s",
+                                    trade["symbol"], trade["strategy"])
 
                     engine.exec_qual.feed_execution(
                         latency_ms=order.get("latency_ms", 0),
@@ -148,27 +170,27 @@ def main():
                     # Mantener tracker vivo incluso sin trade
                     engine.perf_tracker.add_equity_snapshot(engine.capital)
 
-            # Gestión de salidas (siempre activa)
+            # Gestión de salidas (siempre activa, incluso con bot detenido)
             for sym in list(pos_mgr.get_active_symbols()):
                 df5 = data.get(sym, {}).get("5m")
                 if df5 is None or df5.empty:
                     continue
-                price = df5["close"].iloc[-1]
+                price = float(df5["close"].iloc[-1])
                 pos_data = pos_mgr.positions[sym].copy()
                 exit_sig, reason, px, updated = HybridExit.should_exit(
                     pos_data, price, time.time()
                 )
                 if exit_sig:
-                    pnl = pos_mgr.close(sym, px, reason)
+                    pnl = pos_mgr.close(sym, float(px), reason)
                     if pnl is not None:
                         trade_info = {
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "symbol": sym,
                             "side": "LONG" if pos_data["dir"] == 1 else "SHORT",
-                            "entry": pos_data["entry"],
-                            "exit": px,
-                            "pnl": pnl,
-                            "meta_score": pos_data.get("meta_score", 0),
+                            "entry": float(pos_data["entry"]),
+                            "exit": float(px),
+                            "pnl": float(pnl),
+                            "meta_score": float(pos_data.get("meta_score", 0)),
                             "strategy": pos_data.get("strategy", "unknown")
                         }
                         append_trade(trade_info)
@@ -184,7 +206,7 @@ def main():
             for sym in pos_mgr.get_active_symbols():
                 df5 = data.get(sym, {}).get("5m")
                 if df5 is not None and not df5.empty:
-                    current_prices[sym] = df5["close"].iloc[-1]
+                    current_prices[sym] = float(df5["close"].iloc[-1])
             save_state(engine, pos_mgr, current_prices, breaker)
 
             # Métricas del ciclo
