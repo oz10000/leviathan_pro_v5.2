@@ -7,62 +7,93 @@ from datetime import datetime, timezone
 import plotly.graph_objects as go
 
 # ---------------------------------------------------------------------------
-# CONFIGURACIÓN
+# CONFIGURACIÓN DE PÁGINA
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="Leviathan Control Center", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="🐋 Leviathan Control Center",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
+# ---------------------------------------------------------------------------
+# ESTILOS VISUALES PROFESIONALES
+# ---------------------------------------------------------------------------
 st.markdown("""
 <style>
     .stApp { background-color: #0E1117; color: #E0E4EA; }
-    .metric-card { background-color: #161B22; border-radius: 12px; padding: 1rem; margin: 0.3rem 0; border: 1px solid #30363D; }
-    .metric-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8B949E; }
+    .main-header { font-size: 2rem; font-weight: 700; color: #58A6FF; margin-bottom: 0.5rem; }
+    .status-card { background-color: #161B22; border-radius: 16px; padding: 1.5rem;
+                   margin: 0.5rem 0; border: 1px solid #30363D; text-align: center; }
+    .status-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em;
+                    color: #8B949E; margin-bottom: 0.3rem; }
+    .status-value { font-size: 1.6rem; font-weight: 700; }
+    .alive-pulse { color: #00D2A1; animation: pulse-glow 1.5s infinite; }
+    @keyframes pulse-glow { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    .dead-text { color: #FF4D4D; }
+    .metric-card { background-color: #161B22; border-radius: 12px; padding: 1rem;
+                   margin: 0.3rem 0; border: 1px solid #30363D; }
+    .metric-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+                    color: #8B949E; }
     .metric-value { font-size: 1.3rem; font-weight: 600; color: #58A6FF; }
-    .heartbeat { display: flex; align-items: center; gap: 0.5rem; }
-    .pulse { width: 12px; height: 12px; border-radius: 50%; background-color: #00D2A1; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-    .alert-red { background-color: #2D1B1B; border-left: 4px solid #FF4D4D; padding: 0.8rem; border-radius: 6px; }
-    .alert-green { background-color: #1B2D1B; border-left: 4px solid #00D2A1; padding: 0.8rem; border-radius: 6px; }
+    .component-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    .component-badge { background-color: #1C2129; border-radius: 20px; padding: 0.3rem 0.8rem;
+                       font-size: 0.75rem; color: #C9D1D9; border: 1px solid #30363D; }
+    .component-badge.active { border-color: #00D2A1; color: #00D2A1; }
+    .component-badge.error { border-color: #FF4D4D; color: #FF4D4D; }
+    .alert-red { background-color: #2D1B1B; border-left: 4px solid #FF4D4D;
+                 padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0; }
+    .alert-green { background-color: #1B2D1B; border-left: 4px solid #00D2A1;
+                   padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# RUTAS
+# RUTAS ABSOLUTAS
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATE_PATH = os.path.join(BASE_DIR, "runtime", "state.json")
-TRADES_PATH = os.path.join(BASE_DIR, "runtime", "trades.csv")
-LOG_PATH = os.path.join(BASE_DIR, "runtime", "logs", "engine.log")
+STATE_PATH   = os.path.join(BASE_DIR, "runtime", "state.json")
+TRADES_PATH  = os.path.join(BASE_DIR, "runtime", "trades.csv")
+LOG_PATH     = os.path.join(BASE_DIR, "runtime", "logs", "engine.log")
 METRICS_PATH = os.path.join(BASE_DIR, "runtime", "metrics.json")
 CONTROL_PATH = os.path.join(BASE_DIR, "runtime", "runtime_control.json")
+CACHE_DIR    = os.path.join(BASE_DIR, "runtime", "cache")
 
 # ---------------------------------------------------------------------------
-# FUNCIONES DE CARGA
+# FUNCIONES DE CARGA SEGURA (con caché de corta duración)
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=8)
 def load_state():
     if not os.path.exists(STATE_PATH): return {}
     try:
-        with open(STATE_PATH, "r") as f: return json.load(f)
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
     except: return {}
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=8)
 def load_metrics():
     if not os.path.exists(METRICS_PATH): return {}
     try:
-        with open(METRICS_PATH, "r") as f: return json.load(f)
+        with open(METRICS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
     except: return {}
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=8)
 def load_control():
-    if not os.path.exists(CONTROL_PATH): return {"bot_enabled": True, "allow_new_entries": True, "shutdown_requested": False}
+    if not os.path.exists(CONTROL_PATH):
+        return {"bot_enabled": True, "allow_new_entries": True, "shutdown_requested": False}
     try:
-        with open(CONTROL_PATH, "r") as f: return json.load(f)
+        with open(CONTROL_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
     except: return {"bot_enabled": True, "allow_new_entries": True, "shutdown_requested": False}
 
 def save_control(control: dict):
+    """Escritura atómica del archivo de control."""
     control["last_modified"] = datetime.now(timezone.utc).isoformat()
     control["modified_by"] = "dashboard"
-    with open(CONTROL_PATH, "w") as f: json.dump(control, f, indent=2)
+    tmp = CONTROL_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(control, f, indent=2)
+    os.replace(tmp, CONTROL_PATH)
 
 @st.cache_data(ttl=30)
 def load_trades():
@@ -75,77 +106,108 @@ def load_trades():
         return df
     except: return pd.DataFrame()
 
-@st.cache_data(ttl=10)
-def load_logs_tail(n=80):
+@st.cache_data(ttl=6)
+def load_logs_tail(n=35):
     if not os.path.exists(LOG_PATH): return ["(log not found)"]
     try:
-        with open(LOG_PATH, "r") as f:
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
             lines = f.readlines()
         return lines[-n:] if lines else ["(log empty)"]
     except: return ["(error reading log)"]
 
 # ---------------------------------------------------------------------------
-# AUTO‑REFRESH
+# AUTO‑REFRESH SEGURO (cada 8 segundos)
 # ---------------------------------------------------------------------------
 from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=10000, key="dashboard-refresh")
+st_autorefresh(interval=8_000, key="dashboard-refresh")
 
 # ---------------------------------------------------------------------------
-# DATOS
+# DATOS VIVOS
 # ---------------------------------------------------------------------------
-state = load_state()
+state   = load_state()
 metrics = load_metrics()
 control = load_control()
 trades_df = load_trades()
-logs = load_logs_tail(80)
+logs    = load_logs_tail(35)
 
 # ---------------------------------------------------------------------------
-# BARRA SUPERIOR DE ESTADO
+# CABECERA PRINCIPAL
 # ---------------------------------------------------------------------------
-st.title("🐋 LEVIATHAN CONTROL CENTER")
-col_status, col_control = st.columns([3, 1])
-with col_status:
-    # Heartbeat
+st.markdown('<div class="main-header">🐋 LEVIATHAN CONTROL CENTER</div>', unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# HEARTBEAT Y ESTADO GENERAL
+# ---------------------------------------------------------------------------
+col_hb, col_ctrl = st.columns([2.5, 1])
+
+with col_hb:
     now_ts = datetime.now(timezone.utc)
     last_exec = state.get("last_execution")
+    alive = False
+    delta_sec = 9999
     if last_exec:
         try:
             last_dt = datetime.fromisoformat(last_exec)
             delta_sec = (now_ts - last_dt).total_seconds()
-            if delta_sec < 120:
-                st.markdown('<div class="heartbeat"><div class="pulse"></div> <span style="color:#00D2A1; font-weight:600;">SYSTEM ALIVE</span></div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="alert-red">⚠️ Last cycle: {:.0f} sec ago</div>'.format(delta_sec), unsafe_allow_html=True)
-        except:
-            st.markdown('<div class="alert-red">⚠️ Invalid timestamp</div>', unsafe_allow_html=True)
+            alive = delta_sec < 120
+        except: pass
+
+    # Bloque visual de estado
+    if alive:
+        st.markdown(f"""
+        <div class="status-card">
+            <div class="status-label">SYSTEM STATUS</div>
+            <div class="status-value alive-pulse">● ALIVE</div>
+            <div style="margin-top:0.5rem; font-size:0.85rem; color:#8B949E;">
+                Último ciclo: {delta_sec:.0f}s atrás
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown('<div class="alert-red">⚠️ No heartbeat</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="status-card">
+            <div class="status-label">SYSTEM STATUS</div>
+            <div class="status-value dead-text">● NO HEARTBEAT</div>
+            <div style="margin-top:0.5rem; font-size:0.85rem; color:#8B949E;">
+                Sin señal desde: {delta_sec:.0f}s
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Indicadores de componentes
+    # Indicadores de componentes (badges)
     comps = {
+        "API": last_exec is not None,
         "DAPS": state.get("daps_x") is not None,
-        "API": True,  # asumimos conectado si hay estado
-        "CACHE": os.path.exists(os.path.join(BASE_DIR, "runtime", "cache")),
-        "PERSISTENCE": os.path.exists(STATE_PATH),
-        "METRICS": os.path.exists(METRICS_PATH)
+        "CACHE": os.path.exists(CACHE_DIR),
+        "PERSIST": os.path.exists(STATE_PATH),
+        "METRICS": os.path.exists(METRICS_PATH),
+        "BREAKER": not state.get("breaker", {}).get("cooldown_active", False),
+        "STATGUARD": state.get("status") != "STAT_GUARD_BLOCK"
     }
-    comp_str = " | ".join([f"{'🟢' if v else '🔴'} {k}" for k, v in comps.items()])
-    st.caption(f"Componentes: {comp_str}")
+    badges_html = '<div class="component-row">'
+    for name, ok in comps.items():
+        cls = "active" if ok else "error"
+        badges_html += f'<span class="component-badge {cls}">{name}</span>'
+    badges_html += '</div>'
+    st.markdown(badges_html, unsafe_allow_html=True)
 
-with col_control:
-    # Botones START/STOP
+with col_ctrl:
+    st.subheader("Control")
     if control.get("bot_enabled", True):
-        if st.button("⏹️ STOP BOT", help="Detiene nuevas entradas. Las posiciones abiertas se mantienen con TP/SL."):
+        if st.button("⏹️ STOP BOT", help="Detiene nuevas entradas. Las posiciones abiertas se mantienen."):
             control["bot_enabled"] = False
             save_control(control)
-            st.experimental_rerun()
+            st.rerun()
+        st.success("BOT RUNNING")
     else:
         if st.button("▶️ START BOT", help="Reanuda la generación de nuevas entradas."):
             control["bot_enabled"] = True
             control["shutdown_requested"] = False
             save_control(control)
-            st.experimental_rerun()
-    st.caption(f"Bot: {'🟢 HABILITADO' if control.get('bot_enabled', True) else '🔴 DETENIDO'}")
+            st.rerun()
+        st.error("BOT STOPPED")
+    st.caption(f"Modo: {'LIVE' if not Config.TESTNET else 'TESTNET'}" 
+               if 'Config' in dir() else "Modo: TESTNET")
 
 # ---------------------------------------------------------------------------
 # MÉTRICAS PRINCIPALES
@@ -160,7 +222,9 @@ with col3:
 with col4:
     st.markdown(f'<div class="metric-card"><div class="metric-label">Equilibrium</div><div class="metric-value">{state.get("equilibrium", 1):.4f}</div></div>', unsafe_allow_html=True)
 
-# Seguridad
+# ---------------------------------------------------------------------------
+# SEGURIDAD (CIRCUIT BREAKER, STAT GUARD, SAFE MODE)
+# ---------------------------------------------------------------------------
 st.subheader("🛡 Safety")
 col_s1, col_s2, col_s3 = st.columns(3)
 breaker_active = state.get("breaker", {}).get("cooldown_active", False)
@@ -179,7 +243,9 @@ if safe_mode:
 else:
     col_s3.success("Riesgo normal")
 
-# Runtime info
+# ---------------------------------------------------------------------------
+# MÉTRICAS DE RUNTIME
+# ---------------------------------------------------------------------------
 if metrics:
     st.subheader("📊 Runtime")
     c1, c2, c3, c4 = st.columns(4)
@@ -189,11 +255,11 @@ if metrics:
     c4.metric("Avg ciclo (ms)", f"{metrics.get('average_cycle_ms', 0):.0f}")
 
 # ---------------------------------------------------------------------------
-# LOGS EN TIEMPO REAL
+# LOGS EN VIVO
 # ---------------------------------------------------------------------------
 st.subheader("📜 Live Logs")
-log_text = "".join(logs[-30:]) if logs else "No logs yet."
-st.text_area("Últimas entradas del log", log_text, height=200, disabled=True)
+log_text = "".join(logs) if logs else "No logs yet."
+st.text_area("Últimas líneas", log_text, height=220, disabled=True)
 
 # ---------------------------------------------------------------------------
 # POSICIONES ABIERTAS
@@ -213,12 +279,13 @@ else:
 # ---------------------------------------------------------------------------
 with st.expander("📋 Historial de Trades"):
     if trades_df.empty:
-        st.info("No hay trades.")
+        st.info("No hay trades registrados.")
     else:
-        st.dataframe(trades_df.sort_values("timestamp", ascending=False).head(50), use_container_width=True)
+        st.dataframe(trades_df.sort_values("timestamp", ascending=False).head(40),
+                     use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# CURVA DE EQUITY SIMPLE
+# CURVA DE EQUITY
 # ---------------------------------------------------------------------------
 if not trades_df.empty:
     st.subheader("📈 Equity")
@@ -227,9 +294,15 @@ if not trades_df.empty:
     init_balance = state.get("balance", 10000) - df_eq["cum_pnl"].iloc[-1] if len(df_eq) else 10000
     df_eq["equity"] = init_balance + df_eq["cum_pnl"]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_eq["timestamp"], y=df_eq["equity"], mode='lines', name='Equity', line=dict(color='#58A6FF')))
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0E1117", plot_bgcolor="#0E1117",
-                      margin=dict(l=0,r=0,t=10,b=10), height=300)
+    fig.add_trace(go.Scatter(x=df_eq["timestamp"], y=df_eq["equity"],
+                             mode='lines', name='Equity',
+                             line=dict(color='#58A6FF', width=2)))
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0E1117",
+                      plot_bgcolor="#0E1117", margin=dict(l=0,r=0,t=10,b=10),
+                      height=300)
     st.plotly_chart(fig, use_container_width=True)
 
-st.caption("Leviathan Control Center v5.2 – Recovery‑First Design")
+# ---------------------------------------------------------------------------
+# PIE DE PÁGINA
+# ---------------------------------------------------------------------------
+st.caption("Leviathan Control Center v5.2 · Recovery‑First Design · Dashboard desacoplado")
