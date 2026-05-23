@@ -50,6 +50,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Ensure runtime directories exist
+        run: |
+          mkdir -p runtime/logs
+          mkdir -p runtime/cache
+          touch runtime/logs/.gitkeep
+
       - name: Run orchestrator
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
@@ -64,6 +70,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "🔄 Runtime persist [skip ci]"
-          file_pattern: "runtime/state.json runtime/trades.csv runtime/logs/* runtime/metrics.json"
+          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/"
           commit_user_name: "Leviathan Bot"
           commit_user_email: "bot@leviathan.local"
