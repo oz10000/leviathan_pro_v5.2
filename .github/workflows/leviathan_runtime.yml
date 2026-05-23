@@ -10,11 +10,12 @@ on:
       - 'runtime/trades.csv'
       - 'runtime/logs/**'
       - 'runtime/metrics.json'
+      - 'runtime/runtime_control.json'
 
 jobs:
   run-engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     concurrency:
       group: leviathan-runtime
       cancel-in-progress: false
@@ -55,6 +56,7 @@ jobs:
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
           MAX_CYCLES: 8
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
       - name: Commit and push state changes
