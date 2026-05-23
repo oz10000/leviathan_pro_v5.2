@@ -1,42 +1,67 @@
-name: Leviathan Runtime
+name: Leviathan Runtime 24/7
+
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '*/10 * * * *'
-concurrency:
-  group: leviathan-runtime
-  cancel-in-progress: false
-permissions:
-  contents: write
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - 'runtime/state.json'
+      - 'runtime/trades.csv'
+      - 'runtime/logs/**'
+      - 'runtime/metrics.json'
+
 jobs:
-  run:
+  run-engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    concurrency:
+      group: leviathan-runtime
+      cancel-in-progress: false
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - name: Run Orchestrator
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache market data
+        uses: actions/cache@v4
+        with:
+          path: runtime/cache
+          key: market-data-${{ github.run_number }}
+          restore-keys: |
+            market-data-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run orchestrator
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
-          OKX_SECRET_KEY: ${{ secrets.OKX_SECRET_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
-          LEVIATHAN_MODE: testnet
-          MAX_CYCLES: 10
+          MAX_CYCLES: 8
         run: python runtime/orchestrator.py
-      - name: Commit runtime state
+
+      - name: Commit and push state changes
         if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git
-          git add runtime/
-          git commit -m "Runtime state" || echo "No changes"
-          git push || echo "Push failed"
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          name: leviathan-state
-          path: runtime/
+          commit_message: "🔄 Runtime persist [skip ci]"
+          file_pattern: "runtime/state.json runtime/trades.csv runtime/logs/* runtime/metrics.json"
+          commit_user_name: "Leviathan Bot"
+          commit_user_email: "bot@leviathan.local"
