@@ -34,6 +34,12 @@ from portfolio.adaptive_allocator import AdaptiveCapitalAllocator
 
 
 class RotationalEngine:
+    """
+    Motor principal de trading rotativo.
+    Integra estrategias, filtros causales, DAPS, gestión de riesgo
+    y todas las protecciones operativas.
+    """
+
     def __init__(self, strategies, universe, capital, data_feeds):
         self.strategies = strategies
         self.universe = universe
@@ -52,13 +58,13 @@ class RotationalEngine:
         self.max_drawdown = 0.0
         self._signals_filtered = 0
 
-        # DAPS
+        # ─── DAPS ───────────────────────────────────────────────
         self.daps = DAPSCore()
         self.daps_balance = DAPSBalance()
         self.daps_equilibrium = DAPSEquilibrium()
         self.daps_weights = DAPSAdaptiveWeights()
 
-        # Analytics
+        # ─── Analytics ──────────────────────────────────────────
         self.streak = StreakDetector()
         self.edge_decay = EdgeDecay()
         self.regime_cluster = RegimeCluster()
@@ -70,7 +76,7 @@ class RotationalEngine:
         self.causality_cluster = CausalityCluster()
         self.perf_tracker = PerformanceTracker(window=25)
 
-        # Convergence
+        # ─── Convergence ────────────────────────────────────────
         self.mtf_conv = MTFConvergenceEngine()
         self.divergence = DivergenceDetector()
         self.signal_align = SignalAlignment()
@@ -81,18 +87,23 @@ class RotationalEngine:
         self.leverage_safety = LeverageSafetyEngine()
         self.entropy = MarketEntropy()
 
-        # Risk & Allocation
+        # ─── Risk & Allocation ──────────────────────────────────
         self.kelly = {s.name: KellySizer() for s in strategies}
         self.asset_scores = {sym: 0.85 for sym in universe}
         self.allocator = AdaptiveCapitalAllocator(
             self.daps, self.persistence, self.exec_qual, self.asset_scores
         )
 
-        # Statistical validation
+        # ─── Validación estadística ────────────────────────────
         self.pnl_history = []
 
+    # ==================================================================
+    # CICLO PRINCIPAL
+    # ==================================================================
     def cycle(self):
         now = datetime.now(timezone.utc)
+
+        # Control horario
         if self.current_hour != now.hour:
             self.current_hour = now.hour
             self.hourly_trades = 0
@@ -101,13 +112,16 @@ class RotationalEngine:
         if self.last_trade_time and (now - self.last_trade_time).seconds < 30:
             return None
 
+        # Filtro horario (anti dead‑zone)
         if not HourFilter.is_tradeable_hour():
             return None
 
+        # Statistical Guard (bloquea si métricas recientes son insuficientes)
         if not StatisticalGuard.validate(self.pnl_history):
             self.status = "STAT_GUARD_BLOCK"
             return None
 
+        # ─── Actualización DAPS ─────────────────────────────────
         epsilon = self.anomaly.anomaly_score()
         raw_expectancy = self.expectancy.compute()
         x_hat = np.clip(raw_expectancy / (self.capital * 0.04 + 1e-8), -1.0, 1.0)
@@ -115,6 +129,7 @@ class RotationalEngine:
         eq_factor = self.daps_equilibrium.factor(self.daps.x)
         self.daps_balance.update(self.daps.x)
 
+        # ─── Evaluación de candidatos ──────────────────────────
         self._signals_filtered = 0
         candidates = []
 
@@ -130,6 +145,7 @@ class RotationalEngine:
                 self._signals_filtered += 1
                 continue
 
+            # MTF convergence
             tf_data = {}
             for tf, df in [("5m", df5), ("15m", df15), ("1h", df1h)]:
                 if df is not None and len(df) > 5:
@@ -144,6 +160,7 @@ class RotationalEngine:
                 self._signals_filtered += 1
                 continue
 
+            # Divergencia
             price = df5["close"].values[-20:]
             vol = df5["volume"].values[-20:]
             rsi = df5["rsi_14"].values[-20:] if "rsi_14" in df5.columns else np.full(20, 50)
@@ -153,6 +170,7 @@ class RotationalEngine:
                 self._signals_filtered += 1
                 continue
 
+            # Entropía
             ent = self.entropy.shannon_entropy(price)
             if ent > Config.ENTROPY_MAX_ALLOWED:
                 self._signals_filtered += 1
@@ -184,9 +202,11 @@ class RotationalEngine:
             self.last_signal = None
             return None
 
+        # ─── Mejor candidato ────────────────────────────────────
         best = max(candidates, key=lambda x: x[0])
         meta, sym, direction, strat, row, capital_alloc, mtf, div, ent = best
 
+        # Leverage dinámico seguro
         dd = (self.peak_capital - self.capital) / self.peak_capital if self.peak_capital else 0.0
         current_sharpe = self.perf_tracker.realtime_sharpe()
         safe_lev = self.leverage_safety.safe_leverage(
@@ -194,11 +214,13 @@ class RotationalEngine:
             mtf_conv=mtf, divergence=div, drawdown=dd, entropy=ent
         )
 
+        # Kelly sizing con safe‑factor
         risk_pct = self.kelly[strat.name].fraction(sharpe=current_sharpe)
         entry = float(row["close"])
         atr = float(row["atr"])
         size = (float(capital_alloc) * risk_pct * safe_lev) / entry if entry > 0 else 0.0
 
+        # ─── Construcción de posición (todos los números convertidos a nativo) ──
         self.position = {
             "symbol": sym,
             "dir": 1 if direction == "LONG" else -1,
@@ -222,6 +244,9 @@ class RotationalEngine:
         self.hourly_trades += 1
         return self.position
 
+    # ==================================================================
+    # GESTIÓN DE POSICIÓN ABIERTA
+    # ==================================================================
     def update_position(self, price, atr_hist=None):
         if not self.position:
             return
@@ -239,6 +264,7 @@ class RotationalEngine:
             self.capital += pnl
             self.peak_capital = max(self.peak_capital, self.capital)
 
+            # Alimentar analytics
             self.expectancy.add(pnl)
             self.anomaly.feed(pnl, self.position.get("meta_score", 0.0))
             self.loss_reason.log_trade(pnl, {
@@ -250,4 +276,5 @@ class RotationalEngine:
             self.streak.add_trade({"pnl": pnl, "time": datetime.now(timezone.utc)})
             self.pnl_history.append(pnl)
             self.perf_tracker.add_equity_snapshot(self.capital)
+
             self.position = None
