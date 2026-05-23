@@ -43,8 +43,8 @@ class RotationalEngine:
     def __init__(self, strategies, universe, capital, data_feeds):
         self.strategies = strategies
         self.universe = universe
-        self.capital = capital
-        self.peak_capital = capital
+        self.capital = float(capital)
+        self.peak_capital = float(capital)
         self.data = data_feeds
         self.position = None
         self.last_trade_time = None
@@ -152,7 +152,7 @@ class RotationalEngine:
                     row = df.iloc[-1]
                     tf_data[tf] = {
                         "trend": 1 if row["ema20"] > row["ema50"] else -1,
-                        "momentum": row.get("momentum", 0),
+                        "momentum": float(row.get("momentum", 0)),
                         "volatility_regime": 0
                     }
             mtf_score = self.mtf_conv.compute(tf_data)
@@ -182,19 +182,19 @@ class RotationalEngine:
 
             for strat in self.strategies:
                 base_score = strat.compute_score(df5, df15, row5, row15, direction)
-                meta = (base_score *
-                        mtf_score *
-                        (1 - div_score) *
-                        (1 - ent) *
-                        self.persistence.persistence_score() *
-                        self.exec_qual.quality_score() *
-                        eq_factor)
+                meta = (float(base_score) *
+                        float(mtf_score) *
+                        (1.0 - float(div_score)) *
+                        (1.0 - float(ent)) *
+                        float(self.persistence.persistence_score()) *
+                        float(self.exec_qual.quality_score()) *
+                        float(eq_factor))
 
                 if self.imperfect.is_defective(meta, div_score, ent, mtf_score):
                     self._signals_filtered += 1
                     continue
 
-                alloc = self.allocator.allocate(self.capital).get(sym, 0)
+                alloc = self.allocator.allocate(self.capital).get(sym, 0.0)
                 candidates.append((meta, sym, direction, strat, row5, alloc,
                                    mtf_score, div_score, ent))
 
@@ -207,7 +207,7 @@ class RotationalEngine:
         meta, sym, direction, strat, row, capital_alloc, mtf, div, ent = best
 
         # Leverage dinámico seguro
-        dd = (self.peak_capital - self.capital) / self.peak_capital if self.peak_capital else 0
+        dd = (self.peak_capital - self.capital) / self.peak_capital if self.peak_capital else 0.0
         current_sharpe = self.perf_tracker.realtime_sharpe()
         safe_lev = self.leverage_safety.safe_leverage(
             sharpe_roll=current_sharpe,
@@ -216,30 +216,30 @@ class RotationalEngine:
 
         # Kelly sizing con safe‑factor
         risk_pct = self.kelly[strat.name].fraction(sharpe=current_sharpe)
-        entry = row["close"]
-        atr = row["atr"]
-        size = (capital_alloc * risk_pct * safe_lev) / entry if entry > 0 else 0
+        entry = float(row["close"])
+        atr = float(row["atr"])
+        size = (float(capital_alloc) * risk_pct * safe_lev) / entry if entry > 0 else 0.0
 
-        # ─── Construcción de posición ───────────────────────────
+        # ─── Construcción de posición (todos los números convertidos a nativo) ──
         self.position = {
             "symbol": sym,
             "dir": 1 if direction == "LONG" else -1,
             "entry": entry,
             "atr": atr,
-            "size": size,
-            "leverage": safe_lev,
+            "size": float(size),
+            "leverage": float(safe_lev),
             "strategy": strat.name,
             "entry_time": time.time(),
             "be_active": False,
             "trail_active": False,
-            "sl": entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr,
-            "trail_sl": entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr,
-            "meta_score": meta,
-            "mtf": mtf,
-            "div": div,
-            "ent": ent
+            "sl": float(entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr),
+            "trail_sl": float(entry - (1 if direction == "LONG" else -1) * Config.SL_ATR * atr),
+            "meta_score": float(meta),
+            "mtf": float(mtf),
+            "div": float(div),
+            "ent": float(ent)
         }
-        self.last_signal = {"symbol": sym, "direction": direction, "score": meta}
+        self.last_signal = {"symbol": sym, "direction": direction, "score": float(meta)}
         self.last_trade_time = now
         self.hourly_trades += 1
         return self.position
@@ -251,25 +251,26 @@ class RotationalEngine:
         if not self.position:
             return
         exit_sig, reason, exit_px, updated = HybridExit.should_exit(
-            self.position, price, time.time(), atr_hist
+            self.position, float(price), time.time(), atr_hist
         )
         if updated:
             self.position = updated
         if exit_sig:
             d = self.position["dir"]
-            pnl = ((exit_px - self.position["entry"]) * d *
-                   self.position["leverage"] * self.position["size"] /
-                   self.position["entry"])
+            entry = float(self.position["entry"])
+            leverage = float(self.position["leverage"])
+            size = float(self.position["size"])
+            pnl = ((float(exit_px) - entry) * d * leverage * size / entry) if entry != 0 else 0.0
             self.capital += pnl
             self.peak_capital = max(self.peak_capital, self.capital)
 
             # Alimentar analytics
             self.expectancy.add(pnl)
-            self.anomaly.feed(pnl, self.position.get("meta_score", 0))
+            self.anomaly.feed(pnl, self.position.get("meta_score", 0.0))
             self.loss_reason.log_trade(pnl, {
-                "mtf_convergence": self.position.get("mtf", 1),
-                "divergence": self.position.get("div", 0),
-                "entropy": self.position.get("ent", 0)
+                "mtf_convergence": self.position.get("mtf", 1.0),
+                "divergence": self.position.get("div", 0.0),
+                "entropy": self.position.get("ent", 0.0)
             })
             self.temporal_res.update(datetime.now(timezone.utc), pnl)
             self.streak.add_trade({"pnl": pnl, "time": datetime.now(timezone.utc)})
