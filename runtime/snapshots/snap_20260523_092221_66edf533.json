@@ -1,0 +1,25 @@
+{
+  "balance": 100.0,
+  "peak_capital": 100.0,
+  "equity": 100.0,
+  "pnl": 0.0,
+  "position": null,
+  "loop_count": 0,
+  "equity_history": [
+    100.0
+  ],
+  "active_symbols": [
+    "BTC",
+    "ETH",
+    "SOL",
+    "BNB",
+    "XRP",
+    "DOGE",
+    "ADA",
+    "LINK",
+    "LTC",
+    "TRX"
+  ],
+  "trades_count": 0,
+  "timestamp": 1779528141.890901
+}
