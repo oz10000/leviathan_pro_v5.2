@@ -73,14 +73,12 @@ jobs:
 
       - name: Verify critical runtime modules exist
         run: |
-          echo "Verificando módulos runtime..."
           for mod in persistence_engine circuit_breaker observability market_data_cache control; do
             if [ ! -f runtime/${mod}.py ]; then
               echo "ERROR: runtime/${mod}.py no encontrado"
               exit 1
             fi
           done
-          echo "Verificando módulos edge_core..."
           if [ ! -f leviathan_edge_core/execution/rotational_engine.py ]; then
             echo "ERROR: rotational_engine.py no encontrado"
             exit 1
@@ -96,19 +94,25 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
-      - name: Commit and push state changes (rebase safe)
+      - name: Commit and push state changes (safe)
         if: always()
         run: |
           git config user.name "Leviathan Bot"
           git config user.email "bot@leviathan.local"
           
-          # Traer los cambios remotos e integrarlos
+          # Guardar temporalmente los cambios locales
+          git stash
+          
+          # Traer cambios remotos
           git pull --rebase origin main
           
-          # Añadir solo los archivos de estado (si existen)
+          # Restaurar los cambios locales
+          git stash pop || true
+          
+          # Añadir solo archivos de estado
           git add runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ 2>/dev/null || true
           
-          # Solo commit si hay cambios
+          # Commit solo si hay cambios
           if git diff --cached --quiet; then
             echo "No hay cambios que commitear."
           else
