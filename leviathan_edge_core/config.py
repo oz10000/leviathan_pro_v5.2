@@ -2,20 +2,18 @@ import os
 import math
 
 class Config:
-    # ── Exchange ──────────────────────────────────────────────
-    EXCHANGE = "OKX"                    # OKX | BINANCE | BYBIT | KUCOIN | MEXC
-    BASE_URL = "https://www.okx.com"    # siempre la API pública real
-
     # ── Modo de ejecución ─────────────────────────────────────
-    EXECUTION_MODE = "demo"            # paper | demo | live
-    # paper  → velas reales + órdenes simuladas localmente (sin auth)
-    # demo   → velas reales + órdenes demo reales en exchange (auth requerida)
-    # live   → velas reales + órdenes reales (auth requerida)
+    EXECUTION_MODE = "demo"             # paper | demo | live
+    EXCHANGE = "OKX"
+
+    # ── URLs base ─────────────────────────────────────────────
+    BASE_URL = "https://www.okx.com"                   # datos públicos
+    BASE_URL_DEMO = "https://testnet.okx.com"          # sandbox privado
 
     # ── Credenciales ──────────────────────────────────────────
     API_KEY = os.getenv("OKX_API_KEY", "")
     API_SECRET = os.getenv("OKX_API_SECRET", "")
-    PASSPHRASE = os.getenv("OKX_PASSPHRASE", "")
+    PASSPHRASE = os.getenv("OKX_PASSPHRASE", "")       # demo no la exige
 
     # ── Universo ──────────────────────────────────────────────
     TOP_N = 100
