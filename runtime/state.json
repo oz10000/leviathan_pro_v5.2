@@ -2,11 +2,16 @@
   "balance": 10000.0,
   "equity": 10000.0,
   "position": null,
+<<<<<<< Updated upstream
   "loop_count": 40,
 <<<<<<< Updated upstream
   "last_execution": "2026-05-24T10:26:23.010336+00:00",
 =======
   "last_execution": "2026-05-24T10:32:05.783311+00:00",
+>>>>>>> Stashed changes
+=======
+  "loop_count": 48,
+  "last_execution": "2026-05-24T10:37:50.391819+00:00",
 >>>>>>> Stashed changes
   "daps_x": 0.0,
   "equilibrium": 1.0,

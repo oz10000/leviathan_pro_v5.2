@@ -426,6 +426,7 @@
 2026-05-24 10:25:53,009 | INFO | Inicio ciclo 7/8
 2026-05-24 10:26:23,010 | INFO | Inicio ciclo 8/8
 2026-05-24 10:26:53,011 | INFO | Ejecución completada.
+<<<<<<< Updated upstream
 =======
 2026-05-24 10:27:30,538 | INFO | Estado cargado: loop=32, balance=10000.00
 2026-05-24 10:28:35,773 | INFO | Posiciones restauradas: []
@@ -438,4 +439,17 @@
 2026-05-24 10:31:35,781 | INFO | Inicio ciclo 7/8
 2026-05-24 10:32:05,782 | INFO | Inicio ciclo 8/8
 2026-05-24 10:32:35,784 | INFO | Ejecución completada.
+>>>>>>> Stashed changes
+=======
+2026-05-24 10:33:16,058 | INFO | Estado cargado: loop=40, balance=10000.00
+2026-05-24 10:34:20,382 | INFO | Posiciones restauradas: []
+2026-05-24 10:34:20,382 | INFO | Inicio ciclo 1/8
+2026-05-24 10:34:50,383 | INFO | Inicio ciclo 2/8
+2026-05-24 10:35:20,384 | INFO | Inicio ciclo 3/8
+2026-05-24 10:35:50,385 | INFO | Inicio ciclo 4/8
+2026-05-24 10:36:20,387 | INFO | Inicio ciclo 5/8
+2026-05-24 10:36:50,388 | INFO | Inicio ciclo 6/8
+2026-05-24 10:37:20,390 | INFO | Inicio ciclo 7/8
+2026-05-24 10:37:50,391 | INFO | Inicio ciclo 8/8
+2026-05-24 10:38:20,393 | INFO | Ejecución completada.
 >>>>>>> Stashed changes
