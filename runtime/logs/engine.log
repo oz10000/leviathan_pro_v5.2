@@ -565,3 +565,114 @@
 2026-05-24 10:44:54,562 | INFO | Inicio ciclo 7/8
 2026-05-24 10:45:24,563 | INFO | Inicio ciclo 8/8
 2026-05-24 10:45:54,565 | INFO | Ejecución completada.
+2026-05-24 10:47:11,190 | INFO | Estado cargado: loop=8, balance=10000.00
+2026-05-24 10:47:11,714 | WARNING | No se pudieron obtener datos para GMT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:11,902 | WARNING | No se pudieron obtener datos para EDEN: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:12,163 | WARNING | No se pudieron obtener datos para ICP: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:12,352 | WARNING | No se pudieron obtener datos para FIL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:12,547 | WARNING | No se pudieron obtener datos para WLD: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:12,735 | WARNING | No se pudieron obtener datos para ME: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:12,936 | WARNING | No se pudieron obtener datos para APE: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:13,182 | WARNING | No se pudieron obtener datos para PLUME: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:13,412 | WARNING | No se pudieron obtener datos para GRASS: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:13,609 | WARNING | No se pudieron obtener datos para STRK: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:13,805 | WARNING | No se pudieron obtener datos para HYPE: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,003 | WARNING | No se pudieron obtener datos para TRUMP: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,197 | WARNING | No se pudieron obtener datos para ACT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,393 | WARNING | No se pudieron obtener datos para W: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,590 | WARNING | No se pudieron obtener datos para BIO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,783 | WARNING | No se pudieron obtener datos para BICO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:14,977 | WARNING | No se pudieron obtener datos para GALA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:15,170 | WARNING | No se pudieron obtener datos para CORE: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:15,365 | WARNING | No se pudieron obtener datos para BERA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:15,564 | WARNING | No se pudieron obtener datos para ZEC: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:15,790 | WARNING | No se pudieron obtener datos para SUI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:15,988 | WARNING | No se pudieron obtener datos para CHZ: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:16,217 | WARNING | No se pudieron obtener datos para BSB: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:16,426 | WARNING | No se pudieron obtener datos para MERL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:16,621 | WARNING | No se pudieron obtener datos para INJ: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:16,820 | WARNING | No se pudieron obtener datos para OP: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:17,019 | WARNING | No se pudieron obtener datos para HMSTR: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:17,218 | WARNING | No se pudieron obtener datos para PROVE: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:17,412 | WARNING | No se pudieron obtener datos para EIGEN: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:17,609 | WARNING | No se pudieron obtener datos para AVNT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:17,807 | WARNING | No se pudieron obtener datos para ARKM: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,006 | WARNING | No se pudieron obtener datos para YGG: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,202 | WARNING | No se pudieron obtener datos para FOGO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,399 | WARNING | No se pudieron obtener datos para BILL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,589 | WARNING | No se pudieron obtener datos para LIT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,792 | WARNING | No se pudieron obtener datos para DASH: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:18,988 | WARNING | No se pudieron obtener datos para BZ: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:19,193 | WARNING | No se pudieron obtener datos para AXS: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:19,394 | WARNING | No se pudieron obtener datos para FARTCOIN: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:19,587 | WARNING | No se pudieron obtener datos para SAHARA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:19,782 | WARNING | No se pudieron obtener datos para ORDI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:19,986 | WARNING | No se pudieron obtener datos para WIF: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:20,183 | WARNING | No se pudieron obtener datos para XAG: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:20,417 | WARNING | No se pudieron obtener datos para PI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:20,616 | WARNING | No se pudieron obtener datos para ASTER: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:20,805 | WARNING | No se pudieron obtener datos para ETH: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:20,997 | WARNING | No se pudieron obtener datos para JTO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:21,194 | WARNING | No se pudieron obtener datos para IP: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:21,389 | WARNING | No se pudieron obtener datos para WLFI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:21,589 | WARNING | No se pudieron obtener datos para TON: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:21,786 | WARNING | No se pudieron obtener datos para CRV: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:21,980 | WARNING | No se pudieron obtener datos para NOT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:22,181 | WARNING | No se pudieron obtener datos para DYDX: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:22,380 | WARNING | No se pudieron obtener datos para TIA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:22,571 | WARNING | No se pudieron obtener datos para MON: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:22,768 | WARNING | No se pudieron obtener datos para ZORA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:22,959 | WARNING | No se pudieron obtener datos para PENGU: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:23,154 | WARNING | No se pudieron obtener datos para LPT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:23,355 | WARNING | No se pudieron obtener datos para ANIME: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:23,553 | WARNING | No se pudieron obtener datos para BEAT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:23,743 | WARNING | No se pudieron obtener datos para PIPPIN: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:23,939 | WARNING | No se pudieron obtener datos para RIVER: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:24,135 | WARNING | No se pudieron obtener datos para COAI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:24,337 | WARNING | No se pudieron obtener datos para ONDO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:24,528 | WARNING | No se pudieron obtener datos para XPL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:24,725 | WARNING | No se pudieron obtener datos para LUNA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:24,920 | WARNING | No se pudieron obtener datos para LAYER: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:25,144 | WARNING | No se pudieron obtener datos para XAU: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:25,338 | WARNING | No se pudieron obtener datos para DOT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:25,528 | WARNING | No se pudieron obtener datos para KAITO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:25,717 | WARNING | No se pudieron obtener datos para CL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:25,914 | WARNING | No se pudieron obtener datos para ENA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:26,110 | WARNING | No se pudieron obtener datos para BASED: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:26,308 | WARNING | No se pudieron obtener datos para NEIRO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:26,508 | WARNING | No se pudieron obtener datos para VIRTUAL: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:26,730 | WARNING | No se pudieron obtener datos para UMA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:26,920 | WARNING | No se pudieron obtener datos para TAO: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:27,118 | WARNING | No se pudieron obtener datos para RVN: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:27,310 | WARNING | No se pudieron obtener datos para MEME: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:27,506 | WARNING | No se pudieron obtener datos para YB: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:27,705 | WARNING | No se pudieron obtener datos para ZK: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:27,898 | WARNING | No se pudieron obtener datos para PUMP: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:28,134 | WARNING | No se pudieron obtener datos para NEAR: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:28,322 | WARNING | No se pudieron obtener datos para ETHFI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:28,520 | WARNING | No se pudieron obtener datos para LIGHT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:28,723 | WARNING | No se pudieron obtener datos para SPACE: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:28,930 | WARNING | No se pudieron obtener datos para AI: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:29,124 | WARNING | No se pudieron obtener datos para USELESS: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:29,328 | WARNING | No se pudieron obtener datos para BABY: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:29,523 | WARNING | No se pudieron obtener datos para APT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:29,780 | WARNING | No se pudieron obtener datos para MAGIC: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:29,985 | WARNING | No se pudieron obtener datos para ARB: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:30,196 | WARNING | No se pudieron obtener datos para AR: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:30,392 | WARNING | No se pudieron obtener datos para ZBT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:30,585 | WARNING | No se pudieron obtener datos para OKB: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:30,788 | WARNING | No se pudieron obtener datos para PNUT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:31,074 | WARNING | No se pudieron obtener datos para MINA: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:31,266 | WARNING | No se pudieron obtener datos para PROS: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:31,521 | WARNING | No se pudieron obtener datos para AIXBT: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:31,718 | WARNING | No se pudieron obtener datos para BNB: 7 columns passed, passed data had 9 columns
+2026-05-24 10:47:31,719 | INFO | Posiciones restauradas: []
+2026-05-24 10:47:31,719 | INFO | Inicio ciclo 1/8
+2026-05-24 10:48:01,719 | INFO | Inicio ciclo 2/8
+2026-05-24 10:48:31,721 | INFO | Inicio ciclo 3/8
+2026-05-24 10:49:01,722 | INFO | Inicio ciclo 4/8
+2026-05-24 10:49:31,723 | INFO | Inicio ciclo 5/8
+2026-05-24 10:50:01,724 | INFO | Inicio ciclo 6/8
+2026-05-24 10:50:31,726 | INFO | Inicio ciclo 7/8
+2026-05-24 10:51:01,727 | INFO | Inicio ciclo 8/8
+2026-05-24 10:51:31,729 | INFO | Ejecución completada.
