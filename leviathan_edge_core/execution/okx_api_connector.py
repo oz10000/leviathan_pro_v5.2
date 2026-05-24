@@ -1,19 +1,15 @@
 import pandas as pd
 import ccxt
 from datetime import datetime, timezone
-from config import Config
 from execution.exchange_connector import ExchangeConnector
 
 class OKXConnector(ExchangeConnector):
     def __init__(self):
-        self.exec_mode = Config.EXECUTION_MODE
+        # ⚠️ CREDENCIALES HARDCODEADAS DIRECTAMENTE (SOLO PRUEBAS)
+        api_key = "76254b4d-2126-4bb5-a0f1-8c0aa463d90e"
+        api_secret = "36F40E60584E4561E1E2475B979ABDDF"
+        passphrase = ""
 
-        # Credenciales desde Config (hardcodeadas para pruebas)
-        api_key = Config.API_KEY
-        api_secret = Config.API_SECRET
-        passphrase = Config.PASSPHRASE if Config.PASSPHRASE else ""
-
-        # Inicializar CCXT exactamente como en Okx-test
         self.exchange = ccxt.okx({
             'apiKey': api_key,
             'secret': api_secret,
@@ -23,16 +19,13 @@ class OKXConnector(ExchangeConnector):
             'options': {'defaultType': 'swap'}
         })
 
-        if self.exec_mode == "demo":
-            self.exchange.set_sandbox_mode(True)
-
+        self.exchange.set_sandbox_mode(True)
         self.exchange.load_markets()
 
     # ------------------------------------------------------------------
     # Market data (público)
     # ------------------------------------------------------------------
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
-        """Devuelve DataFrame con columnas ts, open, high, low, close, vol."""
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
             ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
@@ -45,7 +38,6 @@ class OKXConnector(ExchangeConnector):
             return pd.DataFrame()
 
     def fetch_tickers(self) -> list:
-        """Retorna lista de dicts con symbol, last, quoteVolume."""
         try:
             tickers = self.exchange.fetch_tickers()
             result = []
@@ -65,9 +57,6 @@ class OKXConnector(ExchangeConnector):
     # ------------------------------------------------------------------
     def place_order(self, symbol: str, side: str, size: float,
                     pos_side: str, tp: float = None, sl: float = None) -> dict:
-        """Retorna dict con code y data[ordId] como antes."""
-        if self.exec_mode == "paper":
-            return {"code": "0", "data": [{"ordId": f"paper_{int(datetime.now().timestamp())}"}]}
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
             params = {}
@@ -82,9 +71,6 @@ class OKXConnector(ExchangeConnector):
             return {"code": "1", "msg": str(e)}
 
     def close_position(self, symbol: str, pos_side: str) -> dict:
-        """Cierra la posición abierta."""
-        if self.exec_mode == "paper":
-            return {"code": "0"}
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
             side = "sell" if pos_side == "long" else "buy"
@@ -94,9 +80,6 @@ class OKXConnector(ExchangeConnector):
             return {"code": "1", "msg": str(e)}
 
     def get_positions(self) -> dict:
-        """Retorna dict con code y data (lista de posiciones)."""
-        if self.exec_mode == "paper":
-            return {"code": "0", "data": []}
         try:
             positions = self.exchange.fetch_positions()
             return {"code": "0", "data": positions}
@@ -104,9 +87,6 @@ class OKXConnector(ExchangeConnector):
             return {"code": "1", "msg": str(e)}
 
     def get_balance(self) -> float:
-        """Retorna el balance en USDT."""
-        if self.exec_mode == "paper":
-            return 0.0
         try:
             balance = self.exchange.fetch_balance()
             return float(balance.get("USDT", {}).get("free", 0.0))
