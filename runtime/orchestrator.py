@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Leviathan V5.2 DAPS CAUSAL – Runtime Orchestrator (compatible con nuevos flags)
+Leviathan V5.2 DAPS CAUSAL – Runtime Orchestrator
 """
 
 import sys
@@ -40,7 +40,7 @@ from runtime.control import load_control, save_control
 
 MAX_CYCLES = int(os.getenv("MAX_CYCLES", 8))
 
-# Determinar si la ejecución debe ser real o paper
+# Ejecución real solo si el modo es demo o live
 LIVE_EXECUTION = Config.EXECUTION_MODE in ("demo", "live")
 
 
