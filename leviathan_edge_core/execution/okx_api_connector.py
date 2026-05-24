@@ -7,17 +7,11 @@ from execution.exchange_connector import ExchangeConnector
 
 class OKXConnector(ExchangeConnector):
     def __init__(self):
-        self.exec_mode = Config.EXECUTION_MODE
-        # Elegir la URL base según el modo
-        if self.exec_mode == "demo":
-            self.base = Config.BASE_URL_DEMO      # testnet.okx.com
-        else:
-            self.base = Config.BASE_URL           # www.okx.com
-
+        self.base = Config.BASE_URL           # https://www.okx.com
         self.key = Config.API_KEY
         self.secret = Config.API_SECRET
-        # La passphrase puede estar vacía (demo no la requiere)
         self.passphrase = Config.PASSPHRASE if Config.PASSPHRASE else None
+        self.exec_mode = Config.EXECUTION_MODE
 
     # ------------------------------------------------------------------
     # Helpers
@@ -51,10 +45,9 @@ class OKXConnector(ExchangeConnector):
             "OK-ACCESS-TIMESTAMP": ts,
             "Content-Type": "application/json"
         }
-        # La passphrase solo se envía si está presente (demo no la necesita)
+        # La passphrase solo se envía si existe
         if self.passphrase and self.passphrase.strip():
             headers["OK-ACCESS-PASSPHRASE"] = self.passphrase
-        # En sandbox NO se envía x-simulated-trading (el propio endpoint ya es demo)
 
         for _ in range(3):
             try:
