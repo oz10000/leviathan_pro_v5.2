@@ -17,7 +17,19 @@ DEFAULT_METRICS = {
     "last_heartbeat": "",
     "circuit_breaker_active": False,
     "stat_guard_block": False,
-    "safe_mode": False
+    "safe_mode": False,
+    # métricas adicionales de observabilidad
+    "scans_completed": 0,
+    "candles_downloaded": 0,
+    "trades_opened": 0,
+    "trades_closed": 0,
+    "trailing_activated": 0,
+    "breakeven_activated": 0,
+    "winrate_rolling": 0.0,
+    "profit_factor_rolling": 0.0,
+    "expectancy_rolling": 0.0,
+    "sharpe_rolling": 0.0,
+    "recovery_count": 0
 }
 
 def load_metrics():
@@ -54,16 +66,25 @@ class RuntimeMetrics:
                   rate_limit_hits=0,
                   circuit_breaker_active=False,
                   stat_guard_block=False,
-                  safe_mode=False):
+                  safe_mode=False,
+                  scans_completed=0,
+                  candles_downloaded=0,
+                  trades_opened=0,
+                  trades_closed=0,
+                  trailing_activated=0,
+                  breakeven_activated=0,
+                  winrate_rolling=0.0,
+                  profit_factor_rolling=0.0,
+                  expectancy_rolling=0.0,
+                  sharpe_rolling=0.0,
+                  recovery_count=0):
         now = time.time()
         if self.last_cycle_start:
             cycle_ms = (now - self.last_cycle_start) * 1000
             prev_avg = self.metrics.get("average_cycle_ms", 0)
             prev_cycles = self.metrics.get("cycles_completed", 0)
             if prev_cycles > 0:
-                self.metrics["average_cycle_ms"] = (
-                    prev_avg * prev_cycles + cycle_ms
-                ) / (prev_cycles + 1)
+                self.metrics["average_cycle_ms"] = (prev_avg * prev_cycles + cycle_ms) / (prev_cycles + 1)
             else:
                 self.metrics["average_cycle_ms"] = cycle_ms
 
@@ -78,5 +99,18 @@ class RuntimeMetrics:
         self.metrics["circuit_breaker_active"] = circuit_breaker_active
         self.metrics["stat_guard_block"] = stat_guard_block
         self.metrics["safe_mode"] = safe_mode
+
+        # nuevas métricas acumulativas o sobrescritas
+        self.metrics["scans_completed"] = self.metrics.get("scans_completed", 0) + scans_completed
+        self.metrics["candles_downloaded"] = self.metrics.get("candles_downloaded", 0) + candles_downloaded
+        self.metrics["trades_opened"] = self.metrics.get("trades_opened", 0) + trades_opened
+        self.metrics["trades_closed"] = self.metrics.get("trades_closed", 0) + trades_closed
+        self.metrics["trailing_activated"] = self.metrics.get("trailing_activated", 0) + trailing_activated
+        self.metrics["breakeven_activated"] = self.metrics.get("breakeven_activated", 0) + breakeven_activated
+        self.metrics["winrate_rolling"] = winrate_rolling
+        self.metrics["profit_factor_rolling"] = profit_factor_rolling
+        self.metrics["expectancy_rolling"] = expectancy_rolling
+        self.metrics["sharpe_rolling"] = sharpe_rolling
+        self.metrics["recovery_count"] = self.metrics.get("recovery_count", 0) + recovery_count
 
         save_metrics(self.metrics)
