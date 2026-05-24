@@ -1097,3 +1097,14 @@
 2026-05-24 11:37:35,429 | INFO | Inicio ciclo 8/8
 2026-05-24 11:38:05,430 | INFO | Ejecución completada.
 >>>>>>> Stashed changes
+2026-05-24 11:39:07,356 | INFO | Estado cargado: loop=24, balance=10000.00
+2026-05-24 11:40:43,373 | INFO | Posiciones restauradas: []
+2026-05-24 11:40:43,374 | INFO | Inicio ciclo 1/8
+2026-05-24 11:41:13,375 | INFO | Inicio ciclo 2/8
+2026-05-24 11:41:43,376 | INFO | Inicio ciclo 3/8
+2026-05-24 11:42:13,377 | INFO | Inicio ciclo 4/8
+2026-05-24 11:42:43,378 | INFO | Inicio ciclo 5/8
+2026-05-24 11:43:13,379 | INFO | Inicio ciclo 6/8
+2026-05-24 11:43:43,381 | INFO | Inicio ciclo 7/8
+2026-05-24 11:44:13,382 | INFO | Inicio ciclo 8/8
+2026-05-24 11:44:43,384 | INFO | Ejecución completada.
