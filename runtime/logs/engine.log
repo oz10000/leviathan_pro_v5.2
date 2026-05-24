@@ -1082,4 +1082,18 @@
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para MINA: 'OKXConnector' object has no attribute 'get_candles'
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para BNB: 'OKXConnector' object has no attribute 'get_candles'
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para PROS: 'OKXConnector' object has no attribute 'get_candles'
+<<<<<<< Updated upstream
 2026-05-24 11:31:26,745 | INFO | Estado cargado: loop=16, balance=10000.00
+=======
+2026-05-24 11:32:43,183 | INFO | Estado cargado: loop=16, balance=10000.00
+2026-05-24 11:34:05,422 | INFO | Posiciones restauradas: []
+2026-05-24 11:34:05,422 | INFO | Inicio ciclo 1/8
+2026-05-24 11:34:35,423 | INFO | Inicio ciclo 2/8
+2026-05-24 11:35:05,424 | INFO | Inicio ciclo 3/8
+2026-05-24 11:35:35,425 | INFO | Inicio ciclo 4/8
+2026-05-24 11:36:05,425 | INFO | Inicio ciclo 5/8
+2026-05-24 11:36:35,427 | INFO | Inicio ciclo 6/8
+2026-05-24 11:37:05,428 | INFO | Inicio ciclo 7/8
+2026-05-24 11:37:35,429 | INFO | Inicio ciclo 8/8
+2026-05-24 11:38:05,430 | INFO | Ejecución completada.
+>>>>>>> Stashed changes
