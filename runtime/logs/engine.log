@@ -394,6 +394,7 @@
 2026-05-24 10:09:34,251 | INFO | Inicio ciclo 7/8
 2026-05-24 10:10:04,252 | INFO | Inicio ciclo 8/8
 2026-05-24 10:10:34,254 | INFO | Ejecución completada.
+<<<<<<< Updated upstream
 2026-05-24 10:22:49,491 | INFO | Estado cargado: loop=32, balance=10000.00
 2026-05-24 10:22:52,712 | WARNING | No se pudieron obtener datos para BTC: HTTPSConnectionPool(host='demo.okx.com', port=443): Max retries exceeded with url: /api/v5/market/candles?instId=BTC-USDT-SWAP&bar=5m&limit=200 (Caused by NameResolutionError("HTTPSConnection(host='demo.okx.com', port=443): Failed to resolve 'demo.okx.com' ([Errno -5] No address associated with hostname)"))
 2026-05-24 10:22:52,735 | WARNING | No se pudieron obtener datos para ETH: HTTPSConnectionPool(host='demo.okx.com', port=443): Max retries exceeded with url: /api/v5/market/candles?instId=ETH-USDT-SWAP&bar=5m&limit=200 (Caused by NameResolutionError("HTTPSConnection(host='demo.okx.com', port=443): Failed to resolve 'demo.okx.com' ([Errno -2] Name or service not known)"))
@@ -425,3 +426,16 @@
 2026-05-24 10:25:53,009 | INFO | Inicio ciclo 7/8
 2026-05-24 10:26:23,010 | INFO | Inicio ciclo 8/8
 2026-05-24 10:26:53,011 | INFO | Ejecución completada.
+=======
+2026-05-24 10:27:30,538 | INFO | Estado cargado: loop=32, balance=10000.00
+2026-05-24 10:28:35,773 | INFO | Posiciones restauradas: []
+2026-05-24 10:28:35,773 | INFO | Inicio ciclo 1/8
+2026-05-24 10:29:05,774 | INFO | Inicio ciclo 2/8
+2026-05-24 10:29:35,775 | INFO | Inicio ciclo 3/8
+2026-05-24 10:30:05,777 | INFO | Inicio ciclo 4/8
+2026-05-24 10:30:35,778 | INFO | Inicio ciclo 5/8
+2026-05-24 10:31:05,780 | INFO | Inicio ciclo 6/8
+2026-05-24 10:31:35,781 | INFO | Inicio ciclo 7/8
+2026-05-24 10:32:05,782 | INFO | Inicio ciclo 8/8
+2026-05-24 10:32:35,784 | INFO | Ejecución completada.
+>>>>>>> Stashed changes
