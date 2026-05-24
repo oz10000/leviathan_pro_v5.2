@@ -1,19 +1,14 @@
 {
-  "balance": 100.0,
-  "equity": 100.0,
+  "balance": 10000.0,
+  "equity": 10000.0,
   "position": null,
-<<<<<<< Updated upstream
-  "loop_count": 11,
-  "last_execution": "2026-05-23T23:52:20.456739+00:00",
-=======
-  "loop_count": 17,
-  "last_execution": "2026-05-23T23:56:39.308342+00:00",
->>>>>>> Stashed changes
+  "loop_count": 8,
+  "last_execution": "2026-05-24T01:36:34.646519+00:00",
   "daps_x": 0.0,
   "equilibrium": 1.0,
   "daps_balance": 1.0,
   "open_positions": {},
-  "status": "RUNNING",
+  "status": "BOOT",
   "last_signal": null,
   "meta": {
     "winrate": 0.0,

@@ -1,25 +1,13 @@
 {
-<<<<<<< Updated upstream
-  "uptime_seconds": 30,
-  "average_cycle_ms": 0.5840063095092773,
-  "api_errors": 0,
-  "rate_limit_hits": 0,
-  "cycles_completed": 2,
-  "signals_generated": 0,
-  "signals_filtered": 40,
-  "open_positions": 0,
-  "last_heartbeat": "2026-05-23T23:52:20.457151+00:00",
-=======
   "uptime_seconds": 210,
-  "average_cycle_ms": 0.5567371845245361,
+  "average_cycle_ms": 0.6996989250183105,
   "api_errors": 0,
   "rate_limit_hits": 0,
   "cycles_completed": 8,
   "signals_generated": 0,
   "signals_filtered": 160,
   "open_positions": 0,
-  "last_heartbeat": "2026-05-23T23:56:39.308711+00:00",
->>>>>>> Stashed changes
+  "last_heartbeat": "2026-05-24T01:36:34.646982+00:00",
   "circuit_breaker_active": false,
   "stat_guard_block": false,
   "safe_mode": true
