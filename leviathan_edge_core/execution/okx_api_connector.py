@@ -10,7 +10,7 @@ class OKXConnector(ExchangeConnector):
         self.base = Config.BASE_URL
         self.key = Config.API_KEY
         self.secret = Config.API_SECRET
-        self.passphrase = Config.PASSPHRASE
+        self.passphrase = Config.PASSPHRASE if Config.PASSPHRASE else None
         self.exec_mode = Config.EXECUTION_MODE
 
     # ------------------------------------------------------------------
@@ -45,7 +45,8 @@ class OKXConnector(ExchangeConnector):
             "OK-ACCESS-TIMESTAMP": ts,
             "Content-Type": "application/json"
         }
-        if self.passphrase:
+        # La passphrase es opcional para cuentas demo de OKX
+        if self.passphrase and self.passphrase.strip():
             headers["OK-ACCESS-PASSPHRASE"] = self.passphrase
         if self.exec_mode == "demo":
             headers["x-simulated-trading"] = "1"
@@ -71,9 +72,8 @@ class OKXConnector(ExchangeConnector):
                             {"instId": instId, "bar": timeframe, "limit": limit})
         if not data:
             return pd.DataFrame()
-        # La API devuelve 9 columnas, nosotros tomamos las primeras 7 que nos interesan
         cols = ["ts", "open", "high", "low", "close", "vol", "volCcy"]
-        rows = [row[:7] for row in data["data"]]   # recortar a 7 columnas
+        rows = [row[:7] for row in data["data"]]
         df = pd.DataFrame(rows, columns=cols)
         for c in ["open", "high", "low", "close", "vol"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
