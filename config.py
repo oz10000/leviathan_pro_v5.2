@@ -2,23 +2,13 @@ import os
 import math
 
 class Config:
-    # ── Modo de ejecución ─────────────────────────────────────
-    EXECUTION_MODE = "demo"             # paper | demo | live
+    EXECUTION_MODE = "demo"
     EXCHANGE = "OKX"
-
-    # URL base (la misma que usa Okx-test)
     BASE_URL = "https://www.okx.com"
 
-    # ── Credenciales DEMO HARDCODEADAS (SOLO PARA PRUEBAS) ────
-    API_KEY = "76254b4d-2126-4bb5-a0f1-8c0aa463d90e"
-    API_SECRET = "36F40E60584E4561E1E2475B979ABDDF"
-    PASSPHRASE = ""                     # esta key no tiene passphrase
-
-    # ── Universo ──────────────────────────────────────────────
     TOP_N = 100
     MIN_VOL24H = 5_000_000
 
-    # ── Scoring ───────────────────────────────────────────────
     W_TREND, W_MOMENTUM, W_VOL_EFF, W_VOLUME = 0.30, 0.25, 0.25, 0.20
     SCORE_THRESHOLD = 68
     FEATURE_WEIGHTS = {
@@ -32,7 +22,6 @@ class Config:
     LEVERAGE_CAPS = {"expansion": 7, "pullback": 5, "reacceleration": 5, "depression_breakout": 5}
     LONG_FACTOR, SHORT_FACTOR = 1.0, 0.8
 
-    # ── Riesgo ────────────────────────────────────────────────
     KELLY_FRACTION = 0.25
     RISK_CAP = 0.04
     MAX_DD_LIMIT = 0.15
@@ -48,17 +37,14 @@ class Config:
     WFO_STABILITY = 0.85
     MAX_SLIPPAGE = 0.0003
 
-    # ── Edge & Regime ─────────────────────────────────────────
     EDGE_ALPHA_SHORT, EDGE_ALPHA_LONG, EDGE_THETA_STD_FACTOR = 0.10, 0.03, 0.5
     ERA_ATR_PERC, ERA_VOL_MULT, ERA_LEV_MULT, ERA_CAPITAL_MULT, ERA_TRAIL_MULT = 90, 2.5, 0.4, 0.5, 0.7
 
-    # ── DAPS ──────────────────────────────────────────────────
     PI = math.pi
     DAPS_INIT_ALPHA, DAPS_INIT_BETA, DAPS_INIT_GAMMA = 0.33, 0.34, 0.33
     DAPS_DECAY = 0.05
     DAPS_EQUILIBRIUM_TARGET = 0.0
 
-    # ── Convergencia & Causalidad ─────────────────────────────
     MTF_CONVERGENCE_THRESHOLD = 0.65
     DIVERGENCE_MAX_TOLERANCE = 0.35
     ENTROPY_MAX_ALLOWED = 0.7
