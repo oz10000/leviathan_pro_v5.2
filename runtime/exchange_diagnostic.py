@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""
-Diagnóstico definitivo de conectividad OKX – versión con respuesta HTTP detallada.
-"""
+"""Diagnóstico de conectividad OKX usando CCXT."""
+import sys, os, ccxt
+from datetime import datetime
 
-import sys, os, time, json, hmac, base64, requests
-from datetime import datetime, timezone
-
-# Ajuste de rutas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "leviathan_edge_core"))
 
@@ -16,149 +12,71 @@ PASS = "✅"
 FAIL = "❌"
 INFO = "ℹ️"
 
-BACKUP_API_KEY = "88221589-94dd-4bd7-8a1b-cbeb4a981a60"
-BACKUP_API_SECRET = "16F5F3F591BD10B2701686197924E78E"
-BACKUP_PASSPHRASE = ""
-
-def get_credentials():
-    key = os.getenv("OKX_API_KEY") or BACKUP_API_KEY
-    secret = os.getenv("OKX_API_SECRET") or BACKUP_API_SECRET
-    passphrase = os.getenv("OKX_PASSPHRASE") or BACKUP_PASSPHRASE
-    return key, secret, passphrase
-
-# ------------------------------------------------------------
-# Conector mínimo (como el que funciona en Okx-test)
-# ------------------------------------------------------------
-class DiagConnector:
-    def __init__(self):
-        self.base = "https://www.okx.com"
-        self.key, self.secret, self.passphrase = get_credentials()
-
-    def _sign(self, method, path, body=""):
-        ts = datetime.now(timezone.utc).isoformat("T", "milliseconds").split("+")[0] + "Z"
-        msg = ts + method + path + body
-        mac = hmac.new(self.secret.encode(), msg.encode(), 'sha256').digest()
-        return ts, base64.b64encode(mac).decode()
-
-    def _private(self, method, path, body=None):
-        body_str = json.dumps(body) if body else ""
-        ts, sign = self._sign(method, path, body_str)
-        headers = {
-            "OK-ACCESS-KEY": self.key,
-            "OK-ACCESS-SIGN": sign,
-            "OK-ACCESS-TIMESTAMP": ts,
-            "Content-Type": "application/json"
-        }
-        if self.passphrase and self.passphrase.strip():
-            headers["OK-ACCESS-PASSPHRASE"] = self.passphrase
-
-        print(f"   >> Petición: {method} {self.base}{path}")
-        print(f"   >> Headers: { {k: v[:20]+'...' if len(str(v))>20 else v for k, v in headers.items()} }")
-        try:
-            r = requests.request(method, self.base + path, data=body_str, headers=headers, timeout=10)
-            print(f"   << HTTP Status: {r.status_code}")
-            print(f"   << Respuesta: {r.text[:500]}")
-            return r
-        except Exception as e:
-            print(f"   << Excepción: {e}")
-            return None
-
-# ------------------------------------------------------------
-# Pruebas
-# ------------------------------------------------------------
 def log(msg):
     print(msg)
 
-def test_public_candles():
-    log("🔍 Probando conectividad pública (velas)...")
+def main():
+    log("🔍 Diagnóstico de conectividad OKX (CCXT)")
+
+    # 1. Conectar
+    exchange = ccxt.okx({
+        'apiKey': Config.API_KEY,
+        'secret': Config.API_SECRET,
+        'password': Config.PASSPHRASE if Config.PASSPHRASE else '',
+        'enableRateLimit': True,
+        'timeout': 30000,
+        'options': {'defaultType': 'swap'}
+    })
+
+    if Config.EXECUTION_MODE == "demo":
+        exchange.set_sandbox_mode(True)
+        log(f"{INFO} Modo sandbox activado para demo.")
+
+    # 2. Probar conectividad básica
     try:
-        r = requests.get("https://www.okx.com/api/v5/market/candles",
-                         params={"instId": "BTC-USDT-SWAP", "bar": "5m", "limit": 5}, timeout=10)
-        data = r.json()
-        if data.get("code") == "0" and data.get("data"):
-            log(f"{PASS} Velas públicas OK ({len(data['data'])} filas).")
-            return True
-        else:
-            log(f"{FAIL} Velas públicas fallaron: {data}")
-            return False
+        ts = exchange.fetch_time()
+        log(f"{PASS} Servidor OKX responde. Hora: {datetime.fromtimestamp(ts/1000)}")
     except Exception as e:
-        log(f"{FAIL} Excepción en velas públicas: {e}")
-        return False
+        log(f"{FAIL} Error de conectividad: {e}")
+        sys.exit(1)
 
-def test_public_tickers():
-    log("🔍 Probando tickers...")
+    # 3. Probar ticker público
     try:
-        r = requests.get("https://www.okx.com/api/v5/market/tickers",
-                         params={"instType": "SWAP"}, timeout=10)
-        data = r.json()
-        if data.get("code") == "0" and data.get("data"):
-            log(f"{PASS} Tickers OK ({len(data['data'])} instrumentos).")
-            return True
-        else:
-            log(f"{FAIL} Tickers fallaron: {data}")
-            return False
+        ticker = exchange.fetch_ticker("BTC/USDT:USDT")
+        log(f"{PASS} Ticker BTC: bid={ticker['bid']} ask={ticker['ask']} last={ticker['last']}")
     except Exception as e:
-        log(f"{FAIL} Excepción en tickers: {e}")
-        return False
+        log(f"{FAIL} Error al obtener ticker: {e}")
+        sys.exit(1)
 
-def test_auth(conn):
-    log("🔐 Probando autenticación privada...")
-    r = conn._private("GET", "/api/v5/account/balance")
-    if r is None:
-        log(f"{FAIL} No se obtuvo respuesta (posible error de red).")
-        return False
-    if r.status_code != 200:
-        log(f"{FAIL} HTTP {r.status_code}")
-        return False
-    resp = r.json()
-    if resp.get("code") != "0":
-        log(f"{FAIL} Error: {resp.get('msg')} (código {resp.get('code')})")
-        return False
-    for d in resp.get("data", []):
-        if d.get("ccy") == "USDT":
-            log(f"{PASS} Autenticación OK. Balance: {d.get('availBal')} USDT")
-            return True
-    log(f"{FAIL} No se encontró USDT en la respuesta.")
-    return False
+    # 4. Probar autenticación (solo en demo/live)
+    if Config.EXECUTION_MODE != "paper":
+        try:
+            balance = exchange.fetch_balance()
+            usdt = balance.get("USDT", {}).get("free", 0.0)
+            log(f"{PASS} Autenticación OK. Balance USDT: {usdt}")
+        except Exception as e:
+            log(f"{FAIL} Error de autenticación: {e}")
+            sys.exit(1)
 
-def test_demo_order(conn):
-    log("📝 Smoke test de orden demo...")
-    body = {
-        "instId": "BTC-USDT-SWAP",
-        "tdMode": "cross",
-        "side": "buy",
-        "ordType": "market",
-        "sz": "0.001",
-        "posSide": "long"
-    }
-    r = conn._private("POST", "/api/v5/trade/order", body)
-    if r is None or r.status_code != 200:
-        log(f"{FAIL} No se pudo crear la orden demo.")
-        return False
-    resp = r.json()
-    if resp.get("code") != "0":
-        log(f"{FAIL} Error: {resp.get('msg')} (código {resp.get('code')})")
-        return False
-    ordId = resp.get("data", [{}])[0].get("ordId")
-    log(f"{PASS} Orden demo creada (ID: {ordId}). Cancelando...")
-    conn._private("POST", "/api/v5/trade/cancel-order", {"ordId": ordId, "instId": "BTC-USDT-SWAP"})
-    return True
-
-if __name__ == "__main__":
-    conn = DiagConnector()
-    results = []
-    results.append(("Velas públicas", test_public_candles()))
-    results.append(("Tickers públicos", test_public_tickers()))
-    results.append(("Autenticación", test_auth(conn)))
-    results.append(("Orden demo", test_demo_order(conn)))
+        # 5. Smoke test de orden (solo demo)
+        if Config.EXECUTION_MODE == "demo":
+            try:
+                log("📝 Probando micro‑orden demo...")
+                order = exchange.create_market_order("BTC/USDT:USDT", "buy", 0.001,
+                                                     params={"tpTriggerPx": "100000", "tpOrdPx": "-1",
+                                                             "slTriggerPx": "100", "slOrdPx": "-1"})
+                ordId = order.get("id", "")
+                log(f"{PASS} Orden demo creada (ID: {ordId})")
+                # Cancelar
+                exchange.cancel_order(ordId, "BTC/USDT:USDT")
+                log(f"{PASS} Orden cancelada correctamente.")
+            except Exception as e:
+                log(f"{FAIL} Error en smoke test: {e}")
+                sys.exit(1)
 
     print("\n" + "="*50)
-    print("RESUMEN DEL DIAGNÓSTICO")
-    for name, ok in results:
-        print(f"  {name}: {'OK' if ok else 'FALLO'}")
-    if all(ok for _, ok in results):
-        print("\n🎉 DIAGNÓSTICO COMPLETO EXITOSO")
-        sys.exit(0)
-    else:
-        print("\n❌ DIAGNÓSTICO FALLIDO")
-        sys.exit(1)
+    print("🎉 DIAGNÓSTICO COMPLETADO EXITOSAMENTE")
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
