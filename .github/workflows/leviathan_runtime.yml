@@ -85,6 +85,15 @@ jobs:
           fi
           echo "Todos los módulos presentes."
 
+      - name: Exchange Diagnostic (fail-fast)
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
+        run: |
+          python runtime/exchange_diagnostic.py
+
       - name: Run orchestrator
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
@@ -94,25 +103,20 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
-      - name: Commit and push state changes (safe)
+      - name: Commit and push state changes (rebase safe)
         if: always()
         run: |
           git config user.name "Leviathan Bot"
           git config user.email "bot@leviathan.local"
-          
-          # Guardar temporalmente los cambios locales
+          # Guardar cambios locales temporalmente
           git stash
-          
-          # Traer cambios remotos
+          # Traer cambios remotos e integrar
           git pull --rebase origin main
-          
-          # Restaurar los cambios locales
+          # Restaurar cambios locales
           git stash pop || true
-          
-          # Añadir solo archivos de estado
+          # Añadir solo los archivos de estado
           git add runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ 2>/dev/null || true
-          
-          # Commit solo si hay cambios
+          # Solo commit si hay cambios
           if git diff --cached --quiet; then
             echo "No hay cambios que commitear."
           else
