@@ -7,7 +7,7 @@ class Config:
     BASE_URL = "https://www.okx.com"    # siempre la API pública real
 
     # ── Modo de ejecución ─────────────────────────────────────
-    EXECUTION_MODE = "paper"            # paper | demo | live
+    EXECUTION_MODE = "demo"            # paper | demo | live
     # paper  → velas reales + órdenes simuladas localmente (sin auth)
     # demo   → velas reales + órdenes demo reales en exchange (auth requerida)
     # live   → velas reales + órdenes reales (auth requerida)
