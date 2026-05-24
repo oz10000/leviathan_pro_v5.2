@@ -71,8 +71,10 @@ class OKXConnector(ExchangeConnector):
                             {"instId": instId, "bar": timeframe, "limit": limit})
         if not data:
             return pd.DataFrame()
+        # La API devuelve 9 columnas, nosotros tomamos las primeras 7 que nos interesan
         cols = ["ts", "open", "high", "low", "close", "vol", "volCcy"]
-        df = pd.DataFrame(data["data"], columns=cols)
+        rows = [row[:7] for row in data["data"]]   # recortar a 7 columnas
+        df = pd.DataFrame(rows, columns=cols)
         for c in ["open", "high", "low", "close", "vol"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
         df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
@@ -132,5 +134,4 @@ class OKXConnector(ExchangeConnector):
         return 0.0
 
     def normalize_symbol(self, raw_symbol: str) -> str:
-        # OKX ya maneja símbolos como "BTC-USDT-SWAP", devolvemos igual
         return raw_symbol
