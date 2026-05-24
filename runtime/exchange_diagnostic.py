@@ -1,82 +1,57 @@
 #!/usr/bin/env python3
-"""Diagnóstico de conectividad OKX usando CCXT."""
-import sys, os, ccxt
-from datetime import datetime
+"""Diagnóstico rápido de conectividad con el nuevo conector CCXT."""
+import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "leviathan_edge_core"))
 
 from config import Config
+from execution.okx_api_connector import OKXConnector
 
 PASS = "✅"
 FAIL = "❌"
-INFO = "ℹ️"
-
-def log(msg):
-    print(msg)
 
 def main():
-    log("🔍 Diagnóstico de conectividad OKX (CCXT)")
+    print("🔍 Diagnóstico de conectividad OKX (CCXT con credenciales hardcodeadas)")
 
-    # 1. Conectar
-    exchange = ccxt.okx({
-        'apiKey': Config.API_KEY,
-        'secret': Config.API_SECRET,
-        'password': Config.PASSPHRASE if Config.PASSPHRASE else '',
-        'enableRateLimit': True,
-        'timeout': 30000,
-        'options': {'defaultType': 'swap'}
-    })
+    conn = OKXConnector()
+    print(f"   Modo: {Config.EXECUTION_MODE}")
 
-    if Config.EXECUTION_MODE == "demo":
-        exchange.set_sandbox_mode(True)
-        log(f"{INFO} Modo sandbox activado para demo.")
+    # Velas
+    df = conn.fetch_candles("BTC", "5m", 3)
+    if not df.empty:
+        print(f"{PASS} Velas públicas OK ({len(df)} filas)")
+    else:
+        print(f"{FAIL} Velas fallaron")
 
-    # 2. Probar conectividad básica
-    try:
-        ts = exchange.fetch_time()
-        log(f"{PASS} Servidor OKX responde. Hora: {datetime.fromtimestamp(ts/1000)}")
-    except Exception as e:
-        log(f"{FAIL} Error de conectividad: {e}")
-        sys.exit(1)
+    # Tickers
+    tickers = conn.fetch_tickers()
+    if tickers:
+        print(f"{PASS} Tickers OK ({len(tickers)} instrumentos)")
+    else:
+        print(f"{FAIL} Tickers fallaron")
 
-    # 3. Probar ticker público
-    try:
-        ticker = exchange.fetch_ticker("BTC/USDT:USDT")
-        log(f"{PASS} Ticker BTC: bid={ticker['bid']} ask={ticker['ask']} last={ticker['last']}")
-    except Exception as e:
-        log(f"{FAIL} Error al obtener ticker: {e}")
-        sys.exit(1)
-
-    # 4. Probar autenticación (solo en demo/live)
+    # Autenticación
     if Config.EXECUTION_MODE != "paper":
-        try:
-            balance = exchange.fetch_balance()
-            usdt = balance.get("USDT", {}).get("free", 0.0)
-            log(f"{PASS} Autenticación OK. Balance USDT: {usdt}")
-        except Exception as e:
-            log(f"{FAIL} Error de autenticación: {e}")
-            sys.exit(1)
+        bal = conn.get_balance()
+        if bal > 0:
+            print(f"{PASS} Balance OK ({bal} USDT)")
+        else:
+            print(f"{FAIL} Balance no disponible")
 
-        # 5. Smoke test de orden (solo demo)
-        if Config.EXECUTION_MODE == "demo":
-            try:
-                log("📝 Probando micro‑orden demo...")
-                order = exchange.create_market_order("BTC/USDT:USDT", "buy", 0.001,
-                                                     params={"tpTriggerPx": "100000", "tpOrdPx": "-1",
-                                                             "slTriggerPx": "100", "slOrdPx": "-1"})
-                ordId = order.get("id", "")
-                log(f"{PASS} Orden demo creada (ID: {ordId})")
-                # Cancelar
-                exchange.cancel_order(ordId, "BTC/USDT:USDT")
-                log(f"{PASS} Orden cancelada correctamente.")
-            except Exception as e:
-                log(f"{FAIL} Error en smoke test: {e}")
-                sys.exit(1)
+        # Orden demo
+        resp = conn.place_order("BTC", "buy", 0.001, "long", tp=100000, sl=100)
+        if resp.get("code") == "0":
+            ordId = resp["data"][0]["ordId"]
+            print(f"{PASS} Orden creada ({ordId})")
+            conn.close_position("BTC", "long")
+            print(f"{PASS} Orden cancelada/cerrada")
+        else:
+            print(f"{FAIL} Orden falló: {resp}")
+    else:
+        print("ℹ️ Modo paper, sin pruebas de autenticación")
 
-    print("\n" + "="*50)
-    print("🎉 DIAGNÓSTICO COMPLETADO EXITOSAMENTE")
-    sys.exit(0)
+    print("\n🎉 Diagnóstico completado")
 
 if __name__ == "__main__":
     main()
