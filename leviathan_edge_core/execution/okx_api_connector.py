@@ -1,22 +1,22 @@
-import time
-import json
-import hmac
-import base64
+import time, json, hmac, base64
 import requests
 import pandas as pd
 from datetime import datetime, timezone
 from config import Config
+from execution.exchange_connector import ExchangeConnector
 
-class OKXConnector:
+class OKXConnector(ExchangeConnector):
     def __init__(self):
         self.base = Config.BASE_URL
         self.key = Config.API_KEY
         self.secret = Config.API_SECRET
         self.passphrase = Config.PASSPHRASE
-        self.testnet = Config.TESTNET
+        self.exec_mode = Config.EXECUTION_MODE
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
     def _public(self, path, params=None):
-        """Llamada a endpoints públicos (sin auth)."""
         for _ in range(3):
             try:
                 r = requests.get(self.base + path, params=params, timeout=10)
@@ -35,7 +35,8 @@ class OKXConnector:
         return ts, base64.b64encode(mac).decode()
 
     def _private(self, method, path, body=None):
-        """Llamada a endpoints privados (requiere auth)."""
+        if self.exec_mode == "paper":
+            return None
         body_str = json.dumps(body) if body else ""
         ts, sign = self._sign(method, path, body_str)
         headers = {
@@ -46,13 +47,13 @@ class OKXConnector:
         }
         if self.passphrase:
             headers["OK-ACCESS-PASSPHRASE"] = self.passphrase
-        # En testnet, añadir header de simulación
-        if self.testnet:
+        if self.exec_mode == "demo":
             headers["x-simulated-trading"] = "1"
 
         for _ in range(3):
             try:
-                r = requests.request(method, self.base + path, data=body_str, headers=headers, timeout=10)
+                r = requests.request(method, self.base + path, data=body_str,
+                                     headers=headers, timeout=10)
                 resp = r.json()
                 if resp.get("code") == "0":
                     return resp
@@ -61,9 +62,13 @@ class OKXConnector:
             time.sleep(1)
         return None
 
-    def get_candles(self, symbol, bar="5m", limit=200) -> pd.DataFrame:
+    # ------------------------------------------------------------------
+    # Market data (público)
+    # ------------------------------------------------------------------
+    def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
         instId = f"{symbol}-USDT-SWAP"
-        data = self._public("/api/v5/market/candles", {"instId": instId, "bar": bar, "limit": limit})
+        data = self._public("/api/v5/market/candles",
+                            {"instId": instId, "bar": timeframe, "limit": limit})
         if not data:
             return pd.DataFrame()
         cols = ["ts", "open", "high", "low", "close", "vol", "volCcy"]
@@ -73,30 +78,32 @@ class OKXConnector:
         df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
         return df.sort_values("ts").reset_index(drop=True)
 
-    def place_order(self, symbol, side, sz, pos_side, tp=None, sl=None):
+    def fetch_tickers(self) -> list:
+        data = self._public("/api/v5/market/tickers", {"instType": "SWAP"})
+        if not data:
+            return []
+        return data.get("data", [])
+
+    # ------------------------------------------------------------------
+    # Execution (privado)
+    # ------------------------------------------------------------------
+    def place_order(self, symbol: str, side: str, size: float,
+                    pos_side: str, tp: float = None, sl: float = None) -> dict:
         instId = f"{symbol}-USDT-SWAP"
         body = {
             "instId": instId,
             "tdMode": "cross",
             "side": side,
             "ordType": "market",
-            "sz": str(round(sz, 3)),
+            "sz": str(round(size, 3)),
             "posSide": pos_side
         }
         if tp and sl:
             body["attachAlgoOrds"] = [
-                {
-                    "attachAlgoClOrdId": f"tp_{symbol}_{int(time.time())}",
-                    "tpTriggerPx": str(tp),
-                    "tpOrdPx": "-1",
-                    "tpTriggerPxType": "last"
-                },
-                {
-                    "attachAlgoClOrdId": f"sl_{symbol}_{int(time.time())}",
-                    "slTriggerPx": str(sl),
-                    "slOrdPx": "-1",
-                    "slTriggerPxType": "last"
-                }
+                {"attachAlgoClOrdId": f"tp_{symbol}_{int(time.time())}",
+                 "tpTriggerPx": str(tp), "tpOrdPx": "-1", "tpTriggerPxType": "last"},
+                {"attachAlgoClOrdId": f"sl_{symbol}_{int(time.time())}",
+                 "slTriggerPx": str(sl), "slOrdPx": "-1", "slTriggerPxType": "last"}
             ]
         elif tp:
             body["tpTriggerPx"] = str(tp)
@@ -104,18 +111,26 @@ class OKXConnector:
         elif sl:
             body["slTriggerPx"] = str(sl)
             body["slOrdPx"] = "-1"
-
         return self._private("POST", "/api/v5/trade/order", body)
 
-    def close_position(self, symbol, pos_side):
+    def close_position(self, symbol: str, pos_side: str) -> dict:
         instId = f"{symbol}-USDT-SWAP"
         close_side = "close_long" if pos_side == "long" else "close_short"
         return self._private("POST", "/api/v5/trade/order",
                              {"instId": instId, "tdMode": "cross",
                               "side": close_side, "ordType": "market", "sz": ""})
 
-    def get_positions(self):
+    def get_positions(self) -> dict:
         return self._private("GET", "/api/v5/account/positions")
 
-    def get_order_status(self, ordId):
-        return self._private("GET", f"/api/v5/trade/order?ordId={ordId}")
+    def get_balance(self) -> float:
+        resp = self._private("GET", "/api/v5/account/balance")
+        if resp and resp.get("code") == "0":
+            for d in resp.get("data", []):
+                if d.get("ccy") == "USDT":
+                    return float(d.get("availBal", 0.0))
+        return 0.0
+
+    def normalize_symbol(self, raw_symbol: str) -> str:
+        # OKX ya maneja símbolos como "BTC-USDT-SWAP", devolvemos igual
+        return raw_symbol
