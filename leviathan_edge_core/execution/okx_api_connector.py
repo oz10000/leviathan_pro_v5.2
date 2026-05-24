@@ -8,31 +8,32 @@ class OKXConnector(ExchangeConnector):
     def __init__(self):
         self.exec_mode = Config.EXECUTION_MODE
 
-        # Configurar CCXT
-        exchange_params = {
-            'apiKey': Config.API_KEY,
-            'secret': Config.API_SECRET,
-            'password': Config.PASSPHRASE if Config.PASSPHRASE else '',
+        # Credenciales desde Config (hardcodeadas para pruebas)
+        api_key = Config.API_KEY
+        api_secret = Config.API_SECRET
+        passphrase = Config.PASSPHRASE if Config.PASSPHRASE else ""
+
+        # Inicializar CCXT exactamente como en Okx-test
+        self.exchange = ccxt.okx({
+            'apiKey': api_key,
+            'secret': api_secret,
+            'password': passphrase,
             'enableRateLimit': True,
             'timeout': 30000,
             'options': {'defaultType': 'swap'}
-        }
-        self.exchange = ccxt.okx(exchange_params)
+        })
 
-        # Activar sandbox si es demo
         if self.exec_mode == "demo":
             self.exchange.set_sandbox_mode(True)
 
-        # Cargar mercados al iniciar
         self.exchange.load_markets()
 
     # ------------------------------------------------------------------
     # Market data (público)
     # ------------------------------------------------------------------
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
-        """Descarga velas. Devuelve DataFrame igual que antes."""
+        """Devuelve DataFrame con columnas ts, open, high, low, close, vol."""
         try:
-            # CCXT espera "BTC/USDT:USDT", nuestro código manda "BTC"
             ccxt_symbol = f"{symbol}/USDT:USDT"
             ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
             if not ohlcv:
@@ -44,11 +45,18 @@ class OKXConnector(ExchangeConnector):
             return pd.DataFrame()
 
     def fetch_tickers(self) -> list:
-        """Obtiene tickers de todos los swaps USDT."""
+        """Retorna lista de dicts con symbol, last, quoteVolume."""
         try:
             tickers = self.exchange.fetch_tickers()
-            return [{"symbol": s, "last": t.get("last"), "quoteVolume": t.get("quoteVolume")}
-                    for s, t in tickers.items() if s.endswith("/USDT:USDT")]
+            result = []
+            for s, t in tickers.items():
+                if s.endswith("/USDT:USDT"):
+                    result.append({
+                        "symbol": s.replace("/USDT:USDT", ""),
+                        "last": t.get("last"),
+                        "quoteVolume": t.get("quoteVolume", 0)
+                    })
+            return result
         except Exception:
             return []
 
@@ -57,10 +65,9 @@ class OKXConnector(ExchangeConnector):
     # ------------------------------------------------------------------
     def place_order(self, symbol: str, side: str, size: float,
                     pos_side: str, tp: float = None, sl: float = None) -> dict:
-        """Coloca una orden de mercado con TP/SL opcionales."""
+        """Retorna dict con code y data[ordId] como antes."""
         if self.exec_mode == "paper":
             return {"code": "0", "data": [{"ordId": f"paper_{int(datetime.now().timestamp())}"}]}
-
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
             params = {}
@@ -69,21 +76,17 @@ class OKXConnector(ExchangeConnector):
                 params["tpOrdPx"] = "-1"
                 params["slTriggerPx"] = str(sl)
                 params["slOrdPx"] = "-1"
-
-            order = self.exchange.create_market_order(
-                ccxt_symbol, side.lower(), size, params=params
-            )
+            order = self.exchange.create_market_order(ccxt_symbol, side.lower(), size, params=params)
             return {"code": "0", "data": [{"ordId": order.get("id", "")}]}
         except Exception as e:
             return {"code": "1", "msg": str(e)}
 
     def close_position(self, symbol: str, pos_side: str) -> dict:
-        """Cierra una posición abierta."""
+        """Cierra la posición abierta."""
         if self.exec_mode == "paper":
             return {"code": "0"}
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
-            # En CCXT, cerrar posición es crear una orden de mercado en dirección contraria
             side = "sell" if pos_side == "long" else "buy"
             self.exchange.create_market_order(ccxt_symbol, side, 0, params={"reduceOnly": True})
             return {"code": "0"}
@@ -91,7 +94,7 @@ class OKXConnector(ExchangeConnector):
             return {"code": "1", "msg": str(e)}
 
     def get_positions(self) -> dict:
-        """Obtiene posiciones abiertas."""
+        """Retorna dict con code y data (lista de posiciones)."""
         if self.exec_mode == "paper":
             return {"code": "0", "data": []}
         try:
@@ -101,7 +104,7 @@ class OKXConnector(ExchangeConnector):
             return {"code": "1", "msg": str(e)}
 
     def get_balance(self) -> float:
-        """Obtiene balance en USDT."""
+        """Retorna el balance en USDT."""
         if self.exec_mode == "paper":
             return 0.0
         try:
