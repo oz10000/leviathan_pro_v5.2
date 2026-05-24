@@ -1082,3 +1082,4 @@
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para MINA: 'OKXConnector' object has no attribute 'get_candles'
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para BNB: 'OKXConnector' object has no attribute 'get_candles'
 2026-05-24 11:17:08,454 | WARNING | No se pudieron obtener datos para PROS: 'OKXConnector' object has no attribute 'get_candles'
+2026-05-24 11:31:26,745 | INFO | Estado cargado: loop=16, balance=10000.00
