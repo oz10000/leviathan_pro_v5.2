@@ -1,13 +1,13 @@
 {
   "uptime_seconds": 210,
-  "average_cycle_ms": 0.6835982203483582,
+  "average_cycle_ms": 0.6560564041137695,
   "api_errors": 0,
   "rate_limit_hits": 0,
-  "cycles_completed": 32,
+  "cycles_completed": 40,
   "signals_generated": 0,
-  "signals_filtered": 640,
+  "signals_filtered": 800,
   "open_positions": 0,
-  "last_heartbeat": "2026-05-24T10:10:04.253285+00:00",
+  "last_heartbeat": "2026-05-24T10:26:23.010703+00:00",
   "circuit_breaker_active": false,
   "stat_guard_block": false,
   "safe_mode": true
