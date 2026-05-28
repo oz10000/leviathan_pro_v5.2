@@ -4,23 +4,23 @@
   "position": {
     "symbol": "GMT",
     "dir": -1,
-    "entry": 0.01016,
-    "atr": 1.714285714285719e-05,
-    "size": 1550.1968503937003,
+    "entry": 0.01007,
+    "atr": 1.3571428571428266e-05,
+    "size": 1564.0516385302874,
     "leverage": 1.5,
-    "strategy": "pullback",
-    "entry_time": 1780000900.2246153,
+    "strategy": "reacceleration",
+    "entry_time": 1780007050.2077575,
     "be_active": false,
     "trail_active": false,
-    "sl": 0.010172,
-    "trail_sl": 0.010172,
-    "meta_score": 20655.091597913153,
+    "sl": 0.0100795,
+    "trail_sl": 0.0100795,
+    "meta_score": 8626.235827619823,
     "mtf": 1.0,
     "div": 0.0,
-    "ent": -3069.7655591107946
+    "ent": -2323.2341260336752
   },
-  "loop_count": 48,
-  "last_execution": "2026-05-28T20:41:40.224857+00:00",
+  "loop_count": 56,
+  "last_execution": "2026-05-28T22:24:10.207995+00:00",
   "daps_x": 0.0,
   "equilibrium": 1.0,
   "daps_balance": 1.0,
@@ -29,7 +29,7 @@
   "last_signal": {
     "symbol": "GMT",
     "direction": "SHORT",
-    "score": 20655.091597913153
+    "score": 8626.235827619823
   },
   "meta": {
     "winrate": 0.0,
