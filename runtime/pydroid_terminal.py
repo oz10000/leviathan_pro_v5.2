@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""
-Consola ASCII para Leviathan V5.2B en Pydroid.
-"""
+"""Terminal Pydroid completa con control demo/live y monitoreo de latencia."""
 
-import os
-import sys
-import time
+import os, sys, time
 from pathlib import Path
 from datetime import datetime
 
@@ -14,53 +10,58 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "leviathan_edge_core"))
 
 from config import Config
-from execution.okx_api_connector import OKXConnector
+from runtime.okx_execution_bridge import OKXExecutionBridge
 from runtime.velocity_momentum_engine import VelocityMomentumEngine
-from runtime.pnl_tracker import PnLTracker
-
+from runtime.execution_latency_profiler import ExecutionLatencyProfiler
+from runtime.network_diagnostics import NetworkDiagnostics
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-
-def print_header(conn):
-    print("╔══════════════════════════════════════════╗")
-    print("║   LEVIATHAN V5.2B — VELOCITY-MOMENTUM    ║")
-    print("║        PYDROID TERMINAL v1.0             ║")
-    print("╠══════════════════════════════════════════╣")
-    mode = Config.EXECUTION_MODE.upper()
-    print(f"║ Exchange: OKX {mode:<10}                ║")
+def print_header(bridge, net, lat_prof):
+    stats = lat_prof.stats()
+    net_rep = net.status_report()
+    print("╔══════════════════════════════════════════════╗")
+    print("║      LEVIATHAN V5.2B TERMINAL PRO            ║")
+    print(f"║ Modo: {Config.EXECUTION_MODE.upper():<10} Conexión: {net_rep['connection_score']:.0f}/100   ║")
     try:
-        bal = conn.get_balance()
-        print(f"║ Balance:  {bal:.2f} USDT                  ║")
-    except Exception:
-        print("║ Balance:  DESCONOCIDO                  ║")
-    print("╚══════════════════════════════════════════╝")
-
+        bal = bridge.get_balance()
+        print(f"║ Balance USDT: {bal:.2f}                      ║")
+    except:
+        print("║ Balance: DESCONOCIDO                         ║")
+    print(f"║ Latencia: {stats['latency_ms']:.1f}ms  Jitter: {net_rep['jitter_ms']:.1f}ms  ║")
+    print("╚══════════════════════════════════════════════╝")
 
 def main():
-    conn = OKXConnector()
+    bridge = OKXExecutionBridge()
     vme = VelocityMomentumEngine()
-    pnl_tracker = PnLTracker()
+    lat_prof = ExecutionLatencyProfiler()
+    net = NetworkDiagnostics()
+
+    # Ping inicial para llenar estadísticas
+    for _ in range(3):
+        net.ping()
+        time.sleep(0.5)
 
     while True:
         clear()
-        print_header(conn)
+        print_header(bridge, net, lat_prof)
         print("\nOpciones:")
-        print("1. Ranking Omega Temporal (Top Activos)")
-        print("2. Abrir orden de mercado (manual)")
-        print("3. Ver posiciones abiertas")
-        print("4. Iniciar loop automático")
-        print("5. Salir")
+        print("1. Ranking Omega Temporal")
+        print("2. Abrir orden (manual)")
+        print("3. Ver posiciones")
+        print("4. Cambiar modo (DEMO/LIVE)")
+        print("5. Loop de monitoreo de posiciones")
+        print("6. Salir")
         choice = input("Selecciona: ")
 
         if choice == "1":
-            universe = ["BTC", "ETH", "SOL", "SUI", "INJ", "LINK", "AVAX", "DOGE", "APT", "RUNE"]
+            universe = ["BTC","ETH","SOL","SUI","INJ","LINK","AVAX","DOGE","APT","RUNE"]
             scores = vme.rank_assets(universe)
-            print("\n--- OMEGA TEMPORAL RANKING ---")
+            print("\n--- OMEGA RANKING ---")
             for i, (sym, sc) in enumerate(sorted(scores.items(), key=lambda x: x[1], reverse=True), 1):
                 print(f"{i:2d}. {sym:6s} Ω={sc:.2f}")
-            input("\nEnter para continuar...")
+            input("Enter...")
 
         elif choice == "2":
             sym = input("Símbolo (ej. BTC): ").strip().upper()
@@ -68,40 +69,54 @@ def main():
             amount = float(input("Cantidad (contratos): ") or 0.01)
             tp = float(input("TP (0 para omitir): ") or 0)
             sl = float(input("SL (0 para omitir): ") or 0)
-            resp = conn.place_order(sym, side, amount, "long" if side == "buy" else "short",
-                                    tp=tp if tp > 0 else None, sl=sl if sl > 0 else None)
-            print(f"Respuesta: {resp}")
-            input("Enter para continuar...")
+            t0 = time.time()
+            try:
+                order = bridge.place_order(sym, side, amount, tp=tp if tp>0 else None, sl=sl if sl>0 else None)
+                fill_time = time.time()
+                # Simulamos precio de fill (en producción obtener de la orden)
+                fill_price = order.get('price', 0.0)
+                lat_prof.record_order(t0, fill_time, fill_price, fill_price)
+                print(f"Orden enviada. ID: {order.get('id','N/A')}")
+            except Exception as e:
+                print(f"Error: {e}")
+            input("Enter...")
 
         elif choice == "3":
             try:
-                positions = conn.get_positions()
-                if positions.get("code") == "0":
-                    for p in positions["data"]:
-                        if float(p.get("notionalUsd", 0)) > 0:
-                            print(f"{p['instId']} {p['posSide']} {p['notionalUsd']} USDT")
-                else:
-                    print("Sin posiciones abiertas.")
+                positions = bridge.get_positions()
+                for p in positions:
+                    if float(p.get('notional',0)) > 0:
+                        print(f"{p['symbol']} {p['side']} {p['notional']} USDT PnL: {p['unrealizedPnl']}")
             except Exception as e:
                 print(f"Error: {e}")
-            input("Enter para continuar...")
+            input("Enter...")
 
         elif choice == "4":
-            print("Loop automático iniciado... (Ctrl+C para detener)")
-            try:
-                while True:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Ciclo completado.")
-                    time.sleep(30)
-            except KeyboardInterrupt:
-                print("\nLoop detenido.")
-            input("Enter para continuar...")
+            current = Config.EXECUTION_MODE
+            Config.EXECUTION_MODE = "live" if current == "demo" else "demo"
+            bridge = OKXExecutionBridge()  # reconectar con nuevas credenciales/modo
+            print(f"Modo cambiado a: {Config.EXECUTION_MODE}")
+            input("Enter...")
 
         elif choice == "5":
+            print("Monitoreando posiciones (Ctrl+C para salir)...")
+            try:
+                while True:
+                    positions = bridge.get_positions()
+                    for p in positions:
+                        if float(p.get('notional',0)) > 0:
+                            # Aquí se podrían ajustar trailing stops automáticos
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] {p['symbol']} {p['side']} PnL: {p['unrealizedPnl']:.2f}")
+                    time.sleep(10)
+            except KeyboardInterrupt:
+                print("\nMonitoreo detenido.")
+            input("Enter...")
+
+        elif choice == "6":
             break
         else:
             print("Opción inválida")
             time.sleep(1)
-
 
 if __name__ == "__main__":
     main()
