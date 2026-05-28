@@ -4,13 +4,6 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
-  push:
-    paths-ignore:
-      - 'runtime/state.json'
-      - 'runtime/trades.csv'
-      - 'runtime/logs/**'
-      - 'runtime/metrics.json'
-      - 'runtime/runtime_control.json'
 
 jobs:
   run-engine:
@@ -23,78 +16,24 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
-      - name: Setup Python
+      - name: Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Cache market data
-        uses: actions/cache@v4
-        with:
-          path: runtime/cache
-          key: market-data-${{ github.run_number }}
-          restore-keys: |
-            market-data-
-
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Ensure runtime directories and files
+      - name: Ensure runtime dirs
         run: |
-          mkdir -p runtime/logs
-          mkdir -p runtime/cache
+          mkdir -p runtime/logs runtime/cache
           touch runtime/logs/.gitkeep
-          if [ ! -f runtime/state.json ]; then
-            echo '{"balance":10000.0,"equity":10000.0,"position":null,"loop_count":0,"last_execution":"","daps_x":0.0,"equilibrium":1.0,"daps_balance":1.0,"open_positions":{},"last_signal":null,"meta":{"winrate":0.0,"profit_factor":0.0,"drawdown":0.0},"breaker":{"loss_streak":0,"peak_equity":null,"cooldown_until":0.0,"cooldown_active":false}}' > runtime/state.json
-          fi
-          if [ ! -f runtime/trades.csv ]; then
-            echo "timestamp,symbol,side,entry,exit,pnl,meta_score,strategy" > runtime/trades.csv
-          fi
-          if [ ! -f runtime/metrics.json ]; then
-            echo '{"uptime_seconds":0,"average_cycle_ms":0,"api_errors":0,"rate_limit_hits":0,"cycles_completed":0,"signals_generated":0,"signals_filtered":0,"open_positions":0,"last_heartbeat":"","circuit_breaker_active":false,"stat_guard_block":false,"safe_mode":false}' > runtime/metrics.json
-          fi
-          if [ ! -f runtime/runtime_control.json ]; then
-            echo '{"bot_enabled":true,"allow_new_entries":true,"shutdown_requested":false,"last_modified":"","modified_by":"system"}' > runtime/runtime_control.json
-          fi
 
-      - name: Verify critical runtime modules exist
-        run: |
-          for mod in persistence_engine circuit_breaker observability market_data_cache control; do
-            if [ ! -f runtime/${mod}.py ]; then
-              echo "ERROR: runtime/${mod}.py no encontrado"
-              exit 1
-            fi
-          done
-          if [ ! -f leviathan_edge_core/execution/rotational_engine.py ]; then
-            echo "ERROR: rotational_engine.py no encontrado"
-            exit 1
-          fi
-          echo "Todos los módulos presentes."
-
-      - name: Exchange Diagnostic (fail-fast)
-        env:
-          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
-          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
-          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
-          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
-        run: |
-          python runtime/exchange_diagnostic.py
-
-      - name: Run orchestrator
+      - name: Run Velocity-Momentum Orchestrator
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
@@ -103,23 +42,11 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
-      - name: Commit and push state changes (rebase safe)
+      - name: Commit state changes
         if: always()
-        run: |
-          git config user.name "Leviathan Bot"
-          git config user.email "bot@leviathan.local"
-          # Guardar cambios locales temporalmente
-          git stash
-          # Traer cambios remotos e integrar
-          git pull --rebase origin main
-          # Restaurar cambios locales
-          git stash pop || true
-          # Añadir solo los archivos de estado
-          git add runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ 2>/dev/null || true
-          # Solo commit si hay cambios
-          if git diff --cached --quiet; then
-            echo "No hay cambios que commitear."
-          else
-            git commit -m "🔄 Runtime persist [skip ci]"
-            git push origin main
-          fi
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🔄 Runtime persist [skip ci]"
+          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/"
+          commit_user_name: "Leviathan Bot"
+          commit_user_email: "bot@leviathan.local"
