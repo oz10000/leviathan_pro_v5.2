@@ -19,9 +19,19 @@ class OKXConnector(ExchangeConnector):
             'options': {'defaultType': 'swap'},
         })
 
-        # ⛔ NO usar set_sandbox_mode – en su lugar, forzar el header demo
+        # Forzar header demo MANUALMENTE (sin set_sandbox_mode)
         self.exchange.headers.update({'x-simulated-trading': '1'})
-        self.exchange.load_markets()
+
+        # Cargar mercados sin fallar si no está disponible en demo
+        try:
+            self.exchange.load_markets()
+        except Exception as e:
+            print(f"[WARN] No se pudieron cargar todos los mercados (demo): {e}", flush=True)
+            # Cargar solo los necesarios bajo demanda
+            try:
+                self.exchange.load_markets(reload=True, params={'instType': 'SWAP'})
+            except Exception:
+                pass
 
     # ── Market data (público) ──────────────────────────────
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
@@ -60,8 +70,13 @@ class OKXConnector(ExchangeConnector):
         """
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
-            market = self.exchange.market(ccxt_symbol)
-            min_size = market['limits']['amount']['min'] or 0.001
+            # Intentar obtener tamaño mínimo del mercado
+            min_size = 0.01  # valor por defecto para BTC
+            try:
+                market = self.exchange.market(ccxt_symbol)
+                min_size = market['limits']['amount']['min'] or 0.01
+            except Exception:
+                pass
             if size < min_size:
                 print(f"[SIZE_ADJUST] {symbol}: {size} → {min_size}", flush=True)
                 size = min_size
