@@ -7,12 +7,20 @@ class Config:
     EXCHANGE = "OKX"
     BASE_URL = "https://www.okx.com"
 
-    # ── Modo diagnóstico DEMO ──────────────────────────────────
+    # ── Flags de módulos (toggles) ────────────────────────────
+    ENABLE_WALK_FORWARD = True
+    ENABLE_ADX_REAL = True
+    ENABLE_ATR_NORMALIZED = True
+    ENABLE_NETWORK_MONITOR = True
+    ENABLE_LATENCY_TRACKING = True
+    ENABLE_TREASURY = False             # desactivado por ahora
+    ENABLE_VELOCITY_MOMENTUM = True
+    AUTO_UNIVERSE_OPTIMIZATION = True
+
+    # ── Modo diagnóstico DEMO ─────────────────────────────────
     DEMO_DIAGNOSTIC_MODE = False        # Solo para certificación mecánica. NUNCA en live.
 
     # ── Velocity-Momentum Engine ──────────────────────────────
-    ENABLE_VELOCITY_MOMENTUM = True
-    AUTO_UNIVERSE_OPTIMIZATION = True
     MAX_TOP_N = 20
     MIN_TOP_N = 5
     VELOCITY_MIN_TRADES = 5
