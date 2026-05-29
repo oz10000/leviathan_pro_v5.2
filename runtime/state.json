@@ -19,18 +19,14 @@
     "div": 0.0,
     "ent": -1245.7116182464908
   },
-  "loop_count": 144,
-  "last_execution": "2026-05-29T19:40:31.090473+00:00",
+  "loop_count": 152,
+  "last_execution": "2026-05-29T20:36:53.142054+00:00",
   "daps_x": 0.0,
   "equilibrium": 1.0,
   "daps_balance": 1.0,
   "open_positions": {},
   "status": "BOOT",
-  "last_signal": {
-    "symbol": "HMSTR",
-    "direction": "LONG",
-    "score": 19109.229642505186
-  },
+  "last_signal": null,
   "meta": {
     "winrate": 0.0,
     "profit_factor": 0.0,
