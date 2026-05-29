@@ -5,10 +5,10 @@ from execution.exchange_connector import ExchangeConnector
 
 class OKXConnector(ExchangeConnector):
     def __init__(self):
-        # ⚠️ CREDENCIALES HARDCODEADAS DIRECTAMENTE (SOLO PRUEBAS)
+        # ⚠️ CREDENCIALES HARDCODEADAS (SOLO PRUEBAS)
         api_key = "76254b4d-2126-4bb5-a0f1-8c0aa463d90e"
         api_secret = "36F40E60584E4561E1E2475B979ABDDF"
-        passphrase = ""
+        passphrase = "Waly200381!"
 
         self.exchange = ccxt.okx({
             'apiKey': api_key,
@@ -16,15 +16,14 @@ class OKXConnector(ExchangeConnector):
             'password': passphrase,
             'enableRateLimit': True,
             'timeout': 30000,
-            'options': {'defaultType': 'swap'}
+            'options': {'defaultType': 'swap'},
         })
 
-        self.exchange.set_sandbox_mode(True)
+        # ⛔ NO usar set_sandbox_mode – en su lugar, forzar el header demo
+        self.exchange.headers.update({'x-simulated-trading': '1'})
         self.exchange.load_markets()
 
-    # ------------------------------------------------------------------
-    # Market data (público)
-    # ------------------------------------------------------------------
+    # ── Market data (público) ──────────────────────────────
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
@@ -52,13 +51,20 @@ class OKXConnector(ExchangeConnector):
         except Exception:
             return []
 
-    # ------------------------------------------------------------------
-    # Execution (privado)
-    # ------------------------------------------------------------------
+    # ── Execution (privado) ────────────────────────────────
     def place_order(self, symbol: str, side: str, size: float,
                     pos_side: str, tp: float = None, sl: float = None) -> dict:
+        """
+        Envía orden de mercado. Retorna dict con 'code' y 'data'.
+        Ajusta tamaño al lote mínimo si es necesario.
+        """
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
+            market = self.exchange.market(ccxt_symbol)
+            min_size = market['limits']['amount']['min'] or 0.001
+            if size < min_size:
+                print(f"[SIZE_ADJUST] {symbol}: {size} → {min_size}", flush=True)
+                size = min_size
             params = {}
             if tp and sl:
                 params["tpTriggerPx"] = str(tp)
@@ -66,8 +72,11 @@ class OKXConnector(ExchangeConnector):
                 params["slTriggerPx"] = str(sl)
                 params["slOrdPx"] = "-1"
             order = self.exchange.create_market_order(ccxt_symbol, side.lower(), size, params=params)
+            print(f"[ORDER_PAYLOAD] {symbol} {side} {size} tp={tp} sl={sl}", flush=True)
+            print(f"[ORDER_RESPONSE] {order}", flush=True)
             return {"code": "0", "data": [{"ordId": order.get("id", "")}]}
         except Exception as e:
+            print(f"[ORDER_EXCEPTION] {e}", flush=True)
             return {"code": "1", "msg": str(e)}
 
     def close_position(self, symbol: str, pos_side: str) -> dict:
