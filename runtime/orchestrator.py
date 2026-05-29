@@ -38,7 +38,7 @@ from runtime.pnl_tracker import PnLTracker
 MAX_CYCLES = int(os.getenv("MAX_CYCLES", 8))
 LIVE_EXECUTION = Config.EXECUTION_MODE in ("demo", "live")
 
-# ─── Modo diagnóstico DEMO (solo para certificación mecánica) ───
+# ─── Modo diagnóstico DEMO ────────────────────────────────────
 DEMO_DIAG_MODE = os.getenv("DEMO_DIAGNOSTIC_MODE", "False").lower() == "true"
 if DEMO_DIAG_MODE and Config.EXECUTION_MODE != "demo":
     print("[ERROR] DEMO_DIAGNOSTIC_MODE solo puede activarse en modo demo.", flush=True)
@@ -46,7 +46,6 @@ if DEMO_DIAG_MODE and Config.EXECUTION_MODE != "demo":
 
 
 def log_api_state(conn):
-    """Imprime estado de la conexión OKX."""
     try:
         bal = conn.get_balance()
         pos = conn.get_positions()
@@ -66,7 +65,6 @@ def log_checklist_item(item, status):
 
 
 def save_snapshot(engine, pos_mgr, total_trades, current_sharpe):
-    """Guarda un snapshot de métricas en runtime/metrics_snapshots.json."""
     snapshot = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "balance": engine.capital,
@@ -92,7 +90,7 @@ def main():
     if state.get("position") is not None or state.get("open_positions"):
         print("[RECOVERY] Runtime restaurado correctamente desde estado previo.", flush=True)
 
-    # ── Velocity-Momentum Engine ──────────────────────────────
+    # ── Velocity-Momentum Engine ─────────────────────────────
     universe = fetch_top100_symbols()
     if Config.ENABLE_VELOCITY_MOMENTUM:
         vme = VelocityMomentumEngine()
@@ -107,7 +105,7 @@ def main():
                 universe = universe[:Config.MAX_TOP_N]
     print(f"[SCANNER] Universo Velocity-Momentum: {len(universe)} activos", flush=True)
 
-    # ── Datos de mercado ──────────────────────────────────────
+    # ── Datos de mercado ─────────────────────────────────────
     conn = OKXConnector()
     data = {}
     candles_downloaded = 0
@@ -134,7 +132,7 @@ def main():
             print(f"[ERROR] Datos {sym}: {e}", flush=True)
     print(f"[MARKET DATA] Velas descargadas: {candles_downloaded} símbolos", flush=True)
 
-    # ── Estado de la API ──────────────────────────────────────
+    # ── Estado de la API ─────────────────────────────────────
     log_api_state(conn)
 
     # ── Modo diagnóstico DEMO ─────────────────────────────────
@@ -189,8 +187,9 @@ def main():
     metrics = RuntimeMetrics()
     pnl_tracker = PnLTracker()
 
-    # ── Bucle de trading ──────────────────────────────────────
+    # ── Bucle de trading ─────────────────────────────────────
     total_trades = 0
+    current_sharpe = 0.0          # <-- Inicializado fuera del bucle
     for cycle in range(MAX_CYCLES):
         trade_generated = False
         try:
@@ -300,7 +299,7 @@ def main():
         log_heartbeat(cycle+1, len(universe), trade_generated)
         time.sleep(30)
 
-    # ── CHECKLIST FINAL ───────────────────────────────────────
+    # ── CHECKLIST FINAL ──────────────────────────────────────
     print("\n[CHECKLIST] ===== RESUMEN DE EJECUCIÓN =====", flush=True)
     log_checklist_item("Runtime estable", True)
     log_checklist_item("Scanner funcionando", len(universe) > 0)
@@ -322,7 +321,7 @@ def main():
     log_checklist_item("Demo interaction OK", Config.EXECUTION_MODE == "demo")
     print("[CHECKLIST] =========================================", flush=True)
 
-    # ── Estadísticas finales ──────────────────────────────────
+    # ── Estadísticas finales ─────────────────────────────────
     print(f"[STATS] PnL/hour=0.0 | WinRate={engine.winrate:.1%} | Trades/day={total_trades/max(1,MAX_CYCLES)*288:.1f} | Sharpe={current_sharpe:.2f} | Drawdown={((engine.peak_capital-engine.capital)/engine.peak_capital*100):.2f}%", flush=True)
 
     control = load_control()
