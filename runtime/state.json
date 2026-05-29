@@ -4,23 +4,23 @@
   "position": {
     "symbol": "ACT",
     "dir": 1,
-    "entry": 0.01185,
-    "atr": 1.714285714285719e-05,
-    "size": 443.0379746835442,
+    "entry": 0.0118,
+    "atr": 2.357142857142885e-05,
+    "size": 444.9152542372881,
     "leverage": 1.5,
-    "strategy": "expansion",
-    "entry_time": 1780017280.0751345,
+    "strategy": "pullback",
+    "entry_time": 1780019572.2100084,
     "be_active": false,
     "trail_active": false,
-    "sl": 0.011838,
-    "trail_sl": 0.011838,
-    "meta_score": 48091.33242561357,
+    "sl": 0.011783499999999999,
+    "trail_sl": 0.011783499999999999,
+    "meta_score": 62849.259429476886,
     "mtf": 1.0,
-    "div": 0.3,
-    "ent": -6044.549912745756
+    "div": 0.0,
+    "ent": -4038.6093117357286
   },
-  "loop_count": 72,
-  "last_execution": "2026-05-29T01:14:40.075383+00:00",
+  "loop_count": 80,
+  "last_execution": "2026-05-29T01:52:52.210215+00:00",
   "daps_x": 0.0,
   "equilibrium": 1.0,
   "daps_balance": 1.0,
@@ -29,7 +29,7 @@
   "last_signal": {
     "symbol": "ACT",
     "direction": "LONG",
-    "score": 48091.33242561357
+    "score": 62849.259429476886
   },
   "meta": {
     "winrate": 0.0,
