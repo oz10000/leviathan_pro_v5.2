@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Pruebas forzadas de infraestructura DEMO. Solo para certificación mecánica."""
+"""Pruebas forzadas de infraestructura DEMO. Incluye FORCE_DEMO_TRADE."""
 
-def run_diagnostics(conn):
+def run_diagnostics(conn, force_trade=False):
     print("[DIAG] Probando fetch_balance...")
     bal = conn.get_balance()
     print(f"[DIAG] Balance: {bal}")
@@ -10,17 +10,30 @@ def run_diagnostics(conn):
     pos = conn.get_positions()
     print(f"[DIAG] Posiciones: {pos}")
 
-    print("[DIAG] Enviando orden dummy de compra (0.01 BTC) con TP/SL...")
-    resp = conn.place_order("BTC", "buy", 0.01, "long", tp=100000, sl=100)
-    print(f"[DIAG] Respuesta orden: {resp}")
-
-    if resp and resp.get("code") == "0":
-        ordId = resp["data"][0]["ordId"]
-        print(f"[DIAG] Orden creada: {ordId}")
-
-        print("[DIAG] Cancelando orden...")
-        cancel = conn.cancel_order(ordId, "BTC")
-        print(f"[DIAG] Cancelación: {cancel}")
+    if force_trade:
+        print("[DIAG] MODO FORCE_DEMO_TRADE ACTIVADO. Abriendo orden real mínima...")
+        # Ajustar tamaño mínimo de BTC
+        resp = conn.place_order("BTC", "buy", 0.01, "long", tp=100000, sl=100)
+        print(f"[DIAG] Orden abierta: {resp}")
+        if resp.get("code") == "0":
+            ordId = resp["data"][0]["ordId"]
+            print("[DIAG] Esperando 5 segundos para ver fill...")
+            import time; time.sleep(5)
+            pos2 = conn.get_positions()
+            print(f"[DIAG] Posiciones tras orden: {pos2}")
+            print("[DIAG] Cancelando/cerrando posición...")
+            cancel = conn.close_position("BTC", "long")
+            print(f"[DIAG] Cierre: {cancel}")
+    else:
+        print("[DIAG] Enviando orden dummy de compra (0.01 BTC) con TP/SL...")
+        resp = conn.place_order("BTC", "buy", 0.01, "long", tp=100000, sl=100)
+        print(f"[DIAG] Respuesta orden: {resp}")
+        if resp and resp.get("code") == "0":
+            ordId = resp["data"][0]["ordId"]
+            print(f"[DIAG] Orden creada: {ordId}")
+            print("[DIAG] Cancelando orden...")
+            cancel = conn.cancel_order(ordId, "BTC")
+            print(f"[DIAG] Cancelación: {cancel}")
 
     print("[DIAG] Probando set_leverage (si falla, no es crítico)...")
     try:
@@ -35,5 +48,4 @@ def run_diagnostics(conn):
     with open("runtime/metrics_snapshots.json", "a") as f:
         f.write(json.dumps(snapshot) + "\n")
     print("[DIAG] Snapshot guardado.")
-
     print("[DIAG] Diagnóstico DEMO completado exitosamente.")
