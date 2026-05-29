@@ -139,7 +139,7 @@ def main():
     if DEMO_DIAG_MODE:
         print("[DIAG] MODO DIAGNÓSTICO DEMO ACTIVADO. Forzando pruebas de órdenes...", flush=True)
         from runtime.demo_diagnostics import run_diagnostics
-                run_diagnostics(conn, force_trade=True)
+        run_diagnostics(conn, force_trade=True)
         print("[DIAG] Diagnóstico completado. Finalizando ejecución.", flush=True)
         return
 
@@ -189,7 +189,7 @@ def main():
 
     # ── Bucle de trading ─────────────────────────────────────
     total_trades = 0
-    current_sharpe = 0.0          # <-- Inicializado fuera del bucle
+    current_sharpe = 0.0
     for cycle in range(MAX_CYCLES):
         trade_generated = False
         try:
