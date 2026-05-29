@@ -139,7 +139,7 @@ def main():
     if DEMO_DIAG_MODE:
         print("[DIAG] MODO DIAGNÓSTICO DEMO ACTIVADO. Forzando pruebas de órdenes...", flush=True)
         from runtime.demo_diagnostics import run_diagnostics
-        run_diagnostics(conn)
+                run_diagnostics(conn, force_trade=True)
         print("[DIAG] Diagnóstico completado. Finalizando ejecución.", flush=True)
         return
 
