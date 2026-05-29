@@ -1618,3 +1618,16 @@
 2026-05-29 01:52:22,196 | INFO | Inicio ciclo 7/8
 2026-05-29 01:52:52,203 | INFO | Inicio ciclo 8/8
 2026-05-29 01:53:22,211 | INFO | Ejecución completada.
+2026-05-29 05:59:57,675 | INFO | Estado cargado: loop=80, balance=10000.00
+2026-05-29 05:59:58,010 | INFO | Velocity-Momentum activo. Universo reducido a 20 activos.
+2026-05-29 06:00:04,818 | INFO | Posición restaurada desde estado previo.
+2026-05-29 06:00:06,854 | INFO | Posiciones restauradas: []
+2026-05-29 06:00:06,854 | INFO | Inicio ciclo 1/8
+2026-05-29 06:00:36,862 | INFO | Inicio ciclo 2/8
+2026-05-29 06:01:06,868 | INFO | Inicio ciclo 3/8
+2026-05-29 06:01:36,874 | INFO | Inicio ciclo 4/8
+2026-05-29 06:02:06,881 | INFO | Inicio ciclo 5/8
+2026-05-29 06:02:36,887 | INFO | Inicio ciclo 6/8
+2026-05-29 06:03:06,893 | INFO | Inicio ciclo 7/8
+2026-05-29 06:03:36,899 | INFO | Inicio ciclo 8/8
+2026-05-29 06:04:06,906 | INFO | Ejecución completada.
