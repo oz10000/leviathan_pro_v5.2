@@ -8,3 +8,10 @@ database/*.db
 leviathan_v52_streamlit/
 !runtime/logs/
 !.gitkeep
+local_credentials.py
+__pycache__/
+*.pyc
+runtime/logs/*
+runtime/cache/*
+runtime/state.json
+runtime/metrics.json
