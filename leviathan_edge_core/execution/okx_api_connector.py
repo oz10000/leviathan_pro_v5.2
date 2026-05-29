@@ -22,28 +22,28 @@ class OKXConnector(ExchangeConnector):
         # Forzar header demo MANUALMENTE (sin set_sandbox_mode)
         self.exchange.headers.update({'x-simulated-trading': '1'})
 
-        # Cargar mercados sin fallar si no está disponible en demo
-        try:
-            self.exchange.load_markets()
-        except Exception as e:
-            print(f"[WARN] No se pudieron cargar todos los mercados (demo): {e}", flush=True)
-            # Cargar solo los necesarios bajo demanda
-            try:
-                self.exchange.load_markets(reload=True, params={'instType': 'SWAP'})
-            except Exception:
-                pass
+        # ⛔ NO cargar mercados en demo – evita error 50038 y permite fetch_ohlcv sin bloqueos.
+        # Los mercados se cargarán bajo demanda si se necesita el tamaño mínimo en place_order.
 
     # ── Market data (público) ──────────────────────────────
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
+        """
+        Descarga velas. Retorna DataFrame con columnas ts, open, high, low, close, vol.
+        Incluye logs detallados de cada paso.
+        """
+        ccxt_symbol = f"{symbol}/USDT:USDT"
+        print(f"[FETCH_START] {symbol} {timeframe} limit={limit}", flush=True)
         try:
-            ccxt_symbol = f"{symbol}/USDT:USDT"
             ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
             if not ohlcv:
+                print(f"[FETCH_RESULT] {symbol}: respuesta vacía", flush=True)
                 return pd.DataFrame()
             df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "vol"])
             df["ts"] = pd.to_datetime(df["ts"], unit="ms")
+            print(f"[FETCH_RESULT] {symbol}: {len(df)} filas descargadas", flush=True)
             return df.sort_values("ts").reset_index(drop=True)
-        except Exception:
+        except Exception as e:
+            print(f"[FETCH_EXCEPTION] {symbol}: {e}", flush=True)
             return pd.DataFrame()
 
     def fetch_tickers(self) -> list:
@@ -70,9 +70,11 @@ class OKXConnector(ExchangeConnector):
         """
         try:
             ccxt_symbol = f"{symbol}/USDT:USDT"
-            # Intentar obtener tamaño mínimo del mercado
-            min_size = 0.01  # valor por defecto para BTC
+            # Cargar mercado bajo demanda para obtener min_size
+            min_size = 0.01
             try:
+                if ccxt_symbol not in self.exchange.markets:
+                    self.exchange.load_markets(reload=True, params={'instType': 'SWAP'})
                 market = self.exchange.market(ccxt_symbol)
                 min_size = market['limits']['amount']['min'] or 0.01
             except Exception:
