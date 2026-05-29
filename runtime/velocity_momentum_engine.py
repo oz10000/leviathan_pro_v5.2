@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import os, json
 
 class VelocityMomentumEngine:
+    """Clasifica los activos por su capacidad de generar PnL rápidamente."""
+
     def __init__(self, trades_file="runtime/trades.csv", window_days=7):
         self.trades_file = trades_file
         self.window_days = window_days
@@ -105,10 +107,11 @@ class VelocityMomentumEngine:
                 scores[sym] = self.calculate_omega_temporal(sym_data, adx, atr_norm)
         return scores
 
-    def optimal_universe(self, symbols, market_data=None, min_n=5, max_n=20):
-        scores = self.rank_assets(symbols, market_data)
+    def optimal_universe(self, symbols, min_n=5, max_n=20):
+        scores = self.rank_assets(symbols)
         if not scores:
-        return symbols[:max_n]
+            # Fallback: sin historial, usar los primeros N símbolos por volumen
+            return symbols[:max_n]
         sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         selected = [s for s, sc in sorted_scores if sc > 0][:max_n]
         if len(selected) < min_n:
