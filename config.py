@@ -3,24 +3,19 @@ import math
 
 class Config:
     # ── Modo de ejecución ─────────────────────────────────────
-    EXECUTION_MODE = "demo"             # demo | live | paper
+    EXECUTION_MODE = "demo"             # paper | demo | live
     EXCHANGE = "OKX"
     BASE_URL = "https://www.okx.com"
 
-    # ── Toggles de módulos ────────────────────────────────────
-    ENABLE_WALK_FORWARD = True
-    ENABLE_ADX_REAL = True
-    ENABLE_ATR_NORMALIZED = True
-    ENABLE_NETWORK_MONITOR = True
-    ENABLE_LATENCY_TRACKING = True
-    ENABLE_VELOCITY_MOMENTUM = True
-    AUTO_UNIVERSE_OPTIMIZATION = True
+    # ── Modo diagnóstico DEMO ──────────────────────────────────
+    DEMO_DIAGNOSTIC_MODE = False        # Solo para certificación mecánica. NUNCA en live.
 
     # ── Velocity-Momentum Engine ──────────────────────────────
+    ENABLE_VELOCITY_MOMENTUM = True
+    AUTO_UNIVERSE_OPTIMIZATION = True
     MAX_TOP_N = 20
     MIN_TOP_N = 5
     VELOCITY_MIN_TRADES = 5
-    # Pesos por defecto (se ajustan con walk-forward)
     W_PNL_HOUR = 0.35
     W_TP_SPEED = 0.20
     W_ADX_EFF = 0.15
@@ -31,19 +26,16 @@ class Config:
     # ── Pydroid ──────────────────────────────────────────────
     PYDROID_MODE = False
 
-    # ── Credenciales (pruebas) ────────────────────────────────
-    try:
-        from local_credentials import API_KEY, API_SECRET, PASSPHRASE
-    except ImportError:
-        API_KEY = "76254b4d-2126-4bb5-a0f1-8c0aa463d90e"
-        API_SECRET = "36F40E60584E4561E1E2475B979ABDDF"
-        PASSPHRASE = "Waly200381!"
+    # ── Credenciales (prioriza variables de entorno) ──────────
+    API_KEY = os.getenv("OKX_API_KEY", "76254b4d-2126-4bb5-a0f1-8c0aa463d90e")
+    API_SECRET = os.getenv("OKX_API_SECRET", "36F40E60584E4561E1E2475B979ABDDF")
+    PASSPHRASE = os.getenv("OKX_PASSPHRASE", "Waly200381!")
 
     # ── Universo base ─────────────────────────────────────────
     TOP_N = 100
     MIN_VOL24H = 5_000_000
 
-    # ── Edge congelado ────────────────────────────────────────
+    # ── Scoring del Edge (congelado) ──────────────────────────
     W_TREND, W_MOMENTUM, W_VOL_EFF, W_VOLUME = 0.30, 0.25, 0.25, 0.20
     SCORE_THRESHOLD = 68
     FEATURE_WEIGHTS = {
@@ -52,6 +44,7 @@ class Config:
         "atr_expansion": 0.12, "rsi_regime": 0.10,
         "volatility_regime": 0.08,
     }
+
     ACTIVE_STRATEGIES = ["expansion", "pullback", "reacceleration", "depression_breakout"]
     LEVERAGE_CAPS = {"expansion": 7, "pullback": 5, "reacceleration": 5, "depression_breakout": 5}
     LONG_FACTOR, SHORT_FACTOR = 1.0, 0.8
@@ -81,7 +74,7 @@ class Config:
 
     MTF_CONVERGENCE_THRESHOLD = 0.65
     DIVERGENCE_MAX_TOLERANCE = 0.35
-    ENTROPY_MAX_ALLOWED = 0.7
+    ENTROPY_MAX_ALLOWED = 0.70
     FRACTAL_CONFIRMATION_WEIGHT = 0.15
     TEMPORAL_RESONANCE_WEIGHT = 0.10
     CAUSALITY_WEIGHT = 0.20
