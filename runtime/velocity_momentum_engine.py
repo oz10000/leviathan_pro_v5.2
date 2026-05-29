@@ -108,7 +108,7 @@ class VelocityMomentumEngine:
     def optimal_universe(self, symbols, market_data=None, min_n=5, max_n=20):
         scores = self.rank_assets(symbols, market_data)
         if not scores:
-            return symbols[:min_n]
+        return symbols[:max_n]]
         sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         selected = [s for s, sc in sorted_scores if sc > 0][:max_n]
         if len(selected) < min_n:
