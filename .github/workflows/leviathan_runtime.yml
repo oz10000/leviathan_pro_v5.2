@@ -39,6 +39,7 @@ jobs:
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
           MAX_CYCLES: 8
+          DEMO_DIAGNOSTIC_MODE: ${{ vars.DEMO_DIAGNOSTIC_MODE || 'False' }}
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
@@ -47,6 +48,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "🔄 Runtime persist [skip ci]"
-          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/"
+          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ runtime/metrics_snapshots.json"
           commit_user_name: "Leviathan Bot"
           commit_user_email: "bot@leviathan.local"
