@@ -8,7 +8,7 @@ on:
 jobs:
   run-engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 360
     permissions:
       contents: write
     concurrency:
@@ -28,21 +28,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Ensure runtime dirs
-        run: |
-          mkdir -p runtime/logs runtime/cache
-          touch runtime/logs/.gitkeep
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: runtime/runtime_state.json
+          key: leviathan-state-${{ github.run_id }}
+          restore-keys: leviathan-state-
 
-      - name: Run Velocity-Momentum Orchestrator
+      - name: Run orchestrator (24/7 loop)
         env:
-          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
-          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
-          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
-          MAX_CYCLES: 8
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
-      - name: Upload runtime artifacts (logs and state)
+      - name: Save state
+        uses: actions/cache@v4
+        with:
+          path: runtime/runtime_state.json
+          key: leviathan-state-${{ github.run_id }}
+
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -53,14 +57,7 @@ jobs:
             runtime/trades.csv
             runtime/metrics.json
             runtime/metrics_snapshots.json
-            runtime/heartbeat.json
+            runtime/heartbeat.log
+            runtime/e2e_audit.log
+            runtime/watchdog.log
             runtime/runtime_control.json
-
-      - name: Commit state changes
-        if: always()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🔄 Runtime persist [skip ci]"
-          file_pattern: "runtime/state.json runtime/trades.csv runtime/metrics.json runtime/logs/ runtime/metrics_snapshots.json"
-          commit_user_name: "Leviathan Bot"
-          commit_user_email: "bot@leviathan.local"
