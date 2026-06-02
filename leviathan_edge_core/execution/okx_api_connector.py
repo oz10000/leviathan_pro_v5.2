@@ -26,7 +26,6 @@ class OKXConnector:
             ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
             if not ohlcv:
                 return pd.DataFrame()
-            # CORREGIDO: la columna de volumen se llama 'volume' para coincidir con feature_engine
             df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
             df["ts"] = pd.to_datetime(df["ts"], unit="ms")
             return df.sort_values("ts").reset_index(drop=True)
@@ -45,7 +44,11 @@ class OKXConnector:
             return []
 
     def place_order(self, symbol: str, side: str, size: float,
-                    tp: float = None, sl: float = None) -> dict:
+                    pos_side: str = None, tp: float = None, sl: float = None) -> dict:
+        """
+        Envía orden de mercado con TP y SL condicionales.
+        El parámetro pos_side se ignora (solo para compatibilidad con OrderRouter).
+        """
         ccxt_symbol = f"{symbol}/USDT:USDT"
         try:
             # Cargar mercado bajo demanda para obtener min_size
