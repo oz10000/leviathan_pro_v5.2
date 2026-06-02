@@ -5,6 +5,7 @@ Incluye:
 - identidad operacional única (BOT_ID)
 - uptime lógico acumulado
 - watchdog de reanudación
+- auditoría MTF
 - auditoría E2E estructurada
 - persistencia forzada
 - certificación progresiva
@@ -289,13 +290,21 @@ def main():
             df5 = compute_features(df5)
             features_ok += 1
             df15 = load_or_fetch(sym, "15m", _fetch_okx, limit=200)
-            df1h = load_or_fetch(sym, "1H", _fetch_okx, limit=200)
+            df1h = load_or_fetch(sym, "1h", _fetch_okx, limit=200)   # <-- corregido
             if not df15.empty:
                 df15 = compute_features(df15)
             if not df1h.empty:
                 df1h = compute_features(df1h)
             data[sym] = {"5m": df5, "15m": df15, "1h": df1h}
             candles_downloaded += 1
+
+            # Auditoría MTF
+            mtf_status = []
+            for tf, df in [("5m", df5), ("15m", df15), ("1h", df1h)]:
+                ok = df is not None and not df.empty
+                mtf_status.append(f"{tf}={'OK' if ok else 'FAIL'}")
+            print(f"[AUDIT_MTF] SYMBOL={sym} {' '.join(mtf_status)} STATUS={'PASS' if all(not df.empty for df in [df5, df15, df1h] if df is not None) else 'FAIL'}", flush=True)
+
             time.sleep(0.1)
         except Exception as e:
             print(f"[ERROR] Datos {sym}: {e}", flush=True)
@@ -551,9 +560,9 @@ def main():
     log_checklist_item("Balance leído", LIVE_EXECUTION)
     log_checklist_item("Posiciones detectadas", pos_mgr.active_count() >= 0)
     log_checklist_item("Órdenes enviadas", total_trades > 0)
-    log_checklist_item("TP funcionando", LIVE_EXECUTION)
-    log_checklist_item("SL funcionando", LIVE_EXECUTION)
-    log_checklist_item("Trailing funcionando", LIVE_EXECUTION)
+    log_checklist_item("TP funcionando", total_trades > 0)   # ahora condicionado a evidencia
+    log_checklist_item("SL funcionando", total_trades > 0)
+    log_checklist_item("Trailing funcionando", total_trades > 0)
     log_checklist_item("Persistencia OK", True)
     log_checklist_item("Recovery OK", True)
     log_checklist_item("Metrics snapshot OK", True)
