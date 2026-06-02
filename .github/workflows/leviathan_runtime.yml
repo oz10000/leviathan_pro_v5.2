@@ -39,7 +39,6 @@ jobs:
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
           MAX_CYCLES: 8
-          DEMO_DIAGNOSTIC_MODE: ${{ vars.DEMO_DIAGNOSTIC_MODE || 'False' }}
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
