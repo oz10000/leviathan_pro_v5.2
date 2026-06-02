@@ -2,17 +2,15 @@ import os
 import math
 
 class Config:
-    # ── Modo de ejecución ─────────────────────────────────────
-    EXECUTION_MODE = "demo"             # paper | demo | live
+    EXECUTION_MODE = "demo"
     EXCHANGE = "OKX"
     BASE_URL = "https://www.okx.com"
 
-    # ── OKX Credenciales ──────────────────────────────────────
-    OKX_API_KEY = os.getenv("OKX_API_KEY", "76254b4d-2126-4bb5-a0f1-8c0aa463d90e")
-    OKX_API_SECRET = os.getenv("OKX_API_SECRET", "36F40E60584E4561E1E2475B979ABDDF")
-    OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "Waly200381!")
+    # Credenciales OKX Demo hardcodeadas
+    OKX_API_KEY = "76254b4d-2126-4bb5-a0f1-8c0aa463d90e"
+    OKX_API_SECRET = "36F40E60584E4561E1E2475B979ABDDF"
+    OKX_PASSPHRASE = "Waly200381!"
 
-    # ── Toggles de módulos ────────────────────────────────────
     ENABLE_WALK_FORWARD = True
     ENABLE_ADX_REAL = True
     ENABLE_ATR_NORMALIZED = True
@@ -21,7 +19,6 @@ class Config:
     ENABLE_VELOCITY_MOMENTUM = True
     AUTO_UNIVERSE_OPTIMIZATION = True
 
-    # ── Velocity-Momentum Engine ──────────────────────────────
     MAX_TOP_N = 20
     MIN_TOP_N = 5
     VELOCITY_MIN_TRADES = 5
@@ -32,14 +29,11 @@ class Config:
     W_MOM_PERSISTENCE = 0.10
     W_WINRATE = 0.10
 
-    # ── Pydroid ──────────────────────────────────────────────
     PYDROID_MODE = False
 
-    # ── Universo base ─────────────────────────────────────────
     TOP_N = 100
     MIN_VOL24H = 5_000_000
 
-    # ── Scoring del Edge (congelado) ──────────────────────────
     W_TREND, W_MOMENTUM, W_VOL_EFF, W_VOLUME = 0.30, 0.25, 0.25, 0.20
     SCORE_THRESHOLD = 68
     FEATURE_WEIGHTS = {
