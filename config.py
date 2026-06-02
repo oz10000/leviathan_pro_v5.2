@@ -12,9 +12,16 @@ class Config:
     OKX_API_SECRET = os.getenv("OKX_API_SECRET", "36F40E60584E4561E1E2475B979ABDDF")
     OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "Waly200381!")
 
-    # ── Velocity-Momentum Engine ──────────────────────────────
+    # ── Toggles de módulos ────────────────────────────────────
+    ENABLE_WALK_FORWARD = True
+    ENABLE_ADX_REAL = True
+    ENABLE_ATR_NORMALIZED = True
+    ENABLE_NETWORK_MONITOR = True
+    ENABLE_LATENCY_TRACKING = True
     ENABLE_VELOCITY_MOMENTUM = True
     AUTO_UNIVERSE_OPTIMIZATION = True
+
+    # ── Velocity-Momentum Engine ──────────────────────────────
     MAX_TOP_N = 20
     MIN_TOP_N = 5
     VELOCITY_MIN_TRADES = 5
