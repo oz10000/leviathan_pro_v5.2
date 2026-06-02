@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Leviathan V5.2B – Orchestrator unificado (Velocity‑Momentum First)
-Incluye auditoría completa, reconciliación de posiciones y gestión dinámica de riesgo.
+Incluye auditoría completa, reconciliación, gestión dinámica de riesgo,
+heartbeat persistente y watchdog.
 """
 
 import sys, os, time, json
@@ -33,6 +34,7 @@ from runtime.control import load_control, save_control
 from runtime.velocity_momentum_engine import VelocityMomentumEngine
 from runtime.pnl_tracker import PnLTracker
 from runtime.reconciliation import reconcile_positions
+from runtime.watchdog import check_health   # NUEVO
 
 MAX_CYCLES = int(os.getenv("MAX_CYCLES", 8))
 LIVE_EXECUTION = Config.EXECUTION_MODE in ("demo", "live")
@@ -43,6 +45,9 @@ if DEMO_DIAG_MODE and Config.EXECUTION_MODE != "demo":
     sys.exit(1)
 
 
+# ------------------------------------------------------------
+# HELPERS
+# ------------------------------------------------------------
 def log_api_state(conn):
     try:
         bal = conn.get_balance()
@@ -52,15 +57,18 @@ def log_api_state(conn):
     except Exception as e:
         print(f"[API] MODE={Config.EXECUTION_MODE} AUTH=FAIL ({e})", flush=True)
 
-
 def log_heartbeat(cycle, universe_size, trade_generated):
-    print(f"[HEARTBEAT] {datetime.now(timezone.utc).isoformat()} | Ciclo {cycle}/{MAX_CYCLES} | Universo: {universe_size} activos | Señal: {'SÍ' if trade_generated else 'NO'}", flush=True)
-
+    msg = (f"[HEARTBEAT] {datetime.now(timezone.utc).isoformat()} | "
+           f"Ciclo {cycle}/{MAX_CYCLES} | Universo: {universe_size} activos | "
+           f"Señal: {'SÍ' if trade_generated else 'NO'}")
+    print(msg, flush=True)
+    # Persistir heartbeat
+    with open("runtime/heartbeat.log", "a") as f:
+        f.write(msg + "\n")
 
 def log_checklist_item(item, status):
     symbol = "✅" if status else "❌"
     print(f"[CHECKLIST] {symbol} {item}", flush=True)
-
 
 def save_snapshot(engine, pos_mgr, total_trades, current_sharpe):
     snapshot = {
@@ -82,13 +90,16 @@ def save_snapshot(engine, pos_mgr, total_trades, current_sharpe):
         f.write(json.dumps(snapshot) + "\n")
 
 
+# ------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------
 def main():
     state = load_state()
     print(f"[BOOT] Estado cargado: loop={state['loop_count']}, balance={state['balance']}", flush=True)
     if state.get("position") is not None or state.get("open_positions"):
         print("[RECOVERY] Runtime restaurado correctamente desde estado previo.", flush=True)
 
-    # ── Velocity-Momentum Engine ─────────────────────────────
+    # ── Velocity-Momentum Engine ─────────────────────────
     universe = fetch_top100_symbols()
     if Config.ENABLE_VELOCITY_MOMENTUM:
         vme = VelocityMomentumEngine()
@@ -103,7 +114,7 @@ def main():
                 universe = universe[:Config.MAX_TOP_N]
     print(f"[SCANNER] Universo Velocity-Momentum: {len(universe)} activos", flush=True)
 
-    # ── Datos de mercado ─────────────────────────────────────
+    # ── Datos de mercado ─────────────────────────────────
     conn = OKXConnector()
     data = {}
     candles_downloaded = 0
@@ -133,7 +144,7 @@ def main():
     print(f"[MARKET DATA] Velas descargadas: {candles_downloaded} símbolos", flush=True)
     print(f"[AUDIT] FEATURES_OK={features_ok}", flush=True)
 
-    # ── Estado de la API ─────────────────────────────────────
+    # ── API state ────────────────────────────────────────
     log_api_state(conn)
 
     if DEMO_DIAG_MODE:
@@ -143,7 +154,7 @@ def main():
         print("[DIAG] Diagnóstico completado. Finalizando ejecución.", flush=True)
         return
 
-    # ── Motor y gestión de posiciones ────────────────────────
+    # ── Motor y posiciones ───────────────────────────────
     strategies = [ExpansionStrategy(), PullbackStrategy(),
                   ReaccelerationStrategy(), DepressionBreakoutStrategy()]
     engine = RotationalEngine(strategies, universe, state["balance"], data)
@@ -158,11 +169,9 @@ def main():
     if hasattr(engine, "status"):
         engine.status = state.get("status", "RUNNING")
 
-    # ── Order Router con conector autenticado ─────────────────
     router = OrderRouter(connector=conn, live=LIVE_EXECUTION)
     pos_mgr = PositionManager()
 
-    # Restaurar posiciones abiertas desde el estado
     for sym, pdata in state.get("open_positions", {}).items():
         pos_mgr.positions[sym] = {
             "symbol": sym,
@@ -177,11 +186,10 @@ def main():
             "be_activated": pdata.get("be_activated", False)
         }
 
-    # ── Reconciliación (ahora pos_mgr ya existe) ─────────────
     if LIVE_EXECUTION:
         reconcile_positions(state, conn, pos_mgr)
 
-    # ── Circuit Breaker ──────────────────────────────────────
+    # ── Circuit Breaker ──────────────────────────────────
     breaker = CircuitBreaker(
         max_consecutive_losses=5,
         max_drawdown_pct=0.12,
@@ -196,21 +204,24 @@ def main():
     metrics = RuntimeMetrics()
     pnl_tracker = PnLTracker()
 
-    # ── Bucle de trading ─────────────────────────────────────
+    # ═══════════════════════════════════════════════════════
+    # BUCLE PRINCIPAL
+    # ═══════════════════════════════════════════════════════
     total_trades = 0
     current_sharpe = 0.0
     for cycle in range(MAX_CYCLES):
         trade_generated = False
         try:
+            # --- WATCHDOG ---
+            check_health(state, pos_mgr, conn)
+
             control = load_control()
             if control.get("shutdown_requested", False):
                 print("[CONTROL] Shutdown solicitado.", flush=True)
                 break
-
             if not control.get("bot_enabled", True):
                 log_heartbeat(cycle+1, len(universe), False)
                 continue
-
             if not breaker.can_trade():
                 print("[BREAKER] Circuit breaker activo. Pausado.", flush=True)
                 time.sleep(30)
@@ -256,7 +267,7 @@ def main():
                 if hasattr(engine, "perf_tracker"):
                     engine.perf_tracker.add_equity_snapshot(engine.capital)
 
-            # ── Gestión dinámica de stops ────────────────────
+            # --- Gestión dinámica de stops ---
             for sym in list(pos_mgr.get_active_symbols()):
                 df5 = data.get(sym, {}).get("5m")
                 if df5 is None or df5.empty:
@@ -352,7 +363,7 @@ def main():
         log_heartbeat(cycle+1, len(universe), trade_generated)
         time.sleep(30)
 
-    # ── CHECKLIST FINAL ──────────────────────────────────────
+    # ── CHECKLIST FINAL ──────────────────────────────────
     print("\n[CHECKLIST] ===== RESUMEN DE EJECUCIÓN =====", flush=True)
     log_checklist_item("Runtime estable", True)
     log_checklist_item("Scanner funcionando", len(universe) > 0)
@@ -374,11 +385,10 @@ def main():
     log_checklist_item("Demo interaction OK", Config.EXECUTION_MODE == "demo")
     print("[CHECKLIST] =========================================", flush=True)
 
-    # ── Auditoría de continuidad ─────────────────────────────
+    # ── Auditoría de continuidad ─────────────────────────
     print(f"[AUDIT_CONTINUITY] PREVIOUS_LOOP={state['loop_count']} RECOVERED=True", flush=True)
     print(f"[AUDIT_CONTINUITY] OPEN_POSITIONS_RESTORED={len(state.get('open_positions', {}))}", flush=True)
     print(f"[AUDIT_CONTINUITY] BOT_RESUMED=True", flush=True)
-
     print(f"[STATS] PnL/hour=0.0 | WinRate={engine.winrate:.1%} | Trades/day={total_trades/max(1,MAX_CYCLES)*288:.1f} | Sharpe={current_sharpe:.2f} | Drawdown={((engine.peak_capital-engine.capital)/engine.peak_capital*100):.2f}%", flush=True)
 
     control = load_control()
