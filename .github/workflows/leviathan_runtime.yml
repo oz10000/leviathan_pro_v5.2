@@ -42,6 +42,20 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/leviathan_edge_core
         run: python runtime/orchestrator.py
 
+      - name: Upload runtime artifacts (logs and state)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leviathan-runtime-artifacts
+          path: |
+            runtime/logs/
+            runtime/state.json
+            runtime/trades.csv
+            runtime/metrics.json
+            runtime/metrics_snapshots.json
+            runtime/heartbeat.json
+            runtime/runtime_control.json
+
       - name: Commit state changes
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
