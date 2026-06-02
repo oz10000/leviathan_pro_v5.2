@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 def reconcile_positions(state, exchange, pos_mgr):
-    """Sincroniza las posiciones locales con las del exchange."""
     exchange_positions = exchange.get_positions()
     for pos in exchange_positions:
         if float(pos.get('contracts', 0)) == 0:
