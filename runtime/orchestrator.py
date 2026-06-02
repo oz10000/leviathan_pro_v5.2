@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Leviathan V5.2B - Orchestrator unificado (Velocity-Momentum First)
-Soporta Workflow (GitHub Actions), Pydroid y DEMO_DIAGNOSTIC_MODE.
-Incluye logs completos, checklist operativo y snapshots continuos de métricas.
+Leviathan V5.2B – Orchestrator unificado (Velocity‑Momentum First)
+Incluye reconciliación, BE y Trailing Stop completos.
 """
 
 import sys, os, time, json
@@ -10,7 +9,6 @@ import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
 
-# PYTHONPATH
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "leviathan_edge_core"))
@@ -34,11 +32,11 @@ from runtime.market_data_cache import load_or_fetch
 from runtime.control import load_control, save_control
 from runtime.velocity_momentum_engine import VelocityMomentumEngine
 from runtime.pnl_tracker import PnLTracker
+from runtime.reconciliation import reconcile_positions
 
 MAX_CYCLES = int(os.getenv("MAX_CYCLES", 8))
 LIVE_EXECUTION = Config.EXECUTION_MODE in ("demo", "live")
 
-# ─── Modo diagnóstico DEMO ────────────────────────────────────
 DEMO_DIAG_MODE = os.getenv("DEMO_DIAGNOSTIC_MODE", "False").lower() == "true"
 if DEMO_DIAG_MODE and Config.EXECUTION_MODE != "demo":
     print("[ERROR] DEMO_DIAGNOSTIC_MODE solo puede activarse en modo demo.", flush=True)
@@ -49,7 +47,7 @@ def log_api_state(conn):
     try:
         bal = conn.get_balance()
         pos = conn.get_positions()
-        pos_count = len(pos.get("data", [])) if pos and pos.get("code") == "0" else 0
+        pos_count = len(pos) if pos else 0
         print(f"[API] MODE={Config.EXECUTION_MODE} AUTH=OK BALANCE={bal:.2f} POSITIONS={pos_count}", flush=True)
     except Exception as e:
         print(f"[API] MODE={Config.EXECUTION_MODE} AUTH=FAIL ({e})", flush=True)
@@ -132,10 +130,9 @@ def main():
             print(f"[ERROR] Datos {sym}: {e}", flush=True)
     print(f"[MARKET DATA] Velas descargadas: {candles_downloaded} símbolos", flush=True)
 
-    # ── Estado de la API ─────────────────────────────────────
+    # ── Estado de la API y reconciliación ────────────────────
     log_api_state(conn)
 
-    # ── Modo diagnóstico DEMO ─────────────────────────────────
     if DEMO_DIAG_MODE:
         print("[DIAG] MODO DIAGNÓSTICO DEMO ACTIVADO. Forzando pruebas de órdenes...", flush=True)
         from runtime.demo_diagnostics import run_diagnostics
@@ -170,8 +167,13 @@ def main():
             "leverage": float(pdata.get("leverage", 1.0)),
             "atr": float(pdata.get("atr", 0.0)),
             "meta_score": float(pdata.get("meta_score", 0.0)),
-            "entry_time": datetime.now(timezone.utc).timestamp()
+            "entry_time": datetime.now(timezone.utc).timestamp(),
+            "sl_order_id": pdata.get("sl_order_id"),   # ← persistido
+            "be_activated": pdata.get("be_activated", False)
         }
+
+    if LIVE_EXECUTION:
+        reconcile_positions(state, conn, pos_mgr)
 
     breaker = CircuitBreaker(
         max_consecutive_losses=5,
@@ -216,8 +218,11 @@ def main():
                     "LONG" if trade["dir"] == 1 else "SHORT",
                     trade["size"], trade["atr"], trade["leverage"]
                 )
-                print(f"[ORDER] STATUS={'ACKNOWLEDGED' if order.get('status')=='filled' else 'FAILED'} ORDER_ID={order.get('id','N/A')}", flush=True)
+                print(f"[ORDER] STATUS={'ACKNOWLEDGED' if order.get('status')=='filled' else 'FAILED'} ORDER_ID={order.get('order_id','N/A')}", flush=True)
                 if order.get("status") == "filled":
+                    # Guardar sl_order_id en la posición
+                    trade["sl_order_id"] = order.get("sl_order_id")
+                    trade["be_activated"] = False
                     pos_mgr.open(trade)
                     print(f"[TRADE] Apertura: {trade['symbol']} {trade['strategy']} | Tamaño: {trade['size']:.4f} | Leverage: {trade['leverage']:.1f}x", flush=True)
                     print(f"[FILL] STATUS=FILLED AVG_PRICE={order.get('price', 0)}", flush=True)
@@ -235,15 +240,51 @@ def main():
                 if hasattr(engine, "perf_tracker"):
                     engine.perf_tracker.add_equity_snapshot(engine.capital)
 
-            # Gestión de salidas
+            # ── Gestión de salidas y actualización dinámica de stops ──
             for sym in list(pos_mgr.get_active_symbols()):
                 df5 = data.get(sym, {}).get("5m")
                 if df5 is None or df5.empty:
                     continue
                 price = float(df5["close"].iloc[-1])
-                pos_data = pos_mgr.positions[sym].copy()
+                pos = pos_mgr.positions[sym]
+                atr = pos.get("atr", 0.0)
+                if atr <= 0:
+                    continue
+
+                # --- Break Even ---
+                if not pos.get("be_activated", False):
+                    be_level = pos["entry"] + (1 if pos["dir"] == 1 else -1) * Config.BE_ATR * atr
+                    if (pos["dir"] == 1 and price >= be_level) or (pos["dir"] == -1 and price <= be_level):
+                        # Mover SL al entry
+                        new_sl = pos["entry"]
+                        if pos.get("sl_order_id"):
+                            conn.modify_sl(sym, pos["sl_order_id"], new_sl, pos["size"],
+                                           "sell" if pos["dir"] == 1 else "buy")
+                        pos["sl"] = new_sl
+                        pos["be_activated"] = True
+                        print(f"[BE] SL movido al entry para {sym}", flush=True)
+
+                # --- Trailing Stop (solo después de BE o si ya está en ganancia) ---
+                if pos.get("be_activated", False):
+                    trail_atr = Config.TRAIL_ATR * atr
+                    if pos["dir"] == 1:  # LONG
+                        new_sl = price - trail_atr
+                        if new_sl > pos.get("sl", 0):
+                            if pos.get("sl_order_id"):
+                                conn.modify_sl(sym, pos["sl_order_id"], new_sl, pos["size"], "sell")
+                            pos["sl"] = new_sl
+                            print(f"[TRAIL] SL LONG actualizado a {new_sl:.2f}", flush=True)
+                    else:  # SHORT
+                        new_sl = price + trail_atr
+                        if new_sl < pos.get("sl", float('inf')):
+                            if pos.get("sl_order_id"):
+                                conn.modify_sl(sym, pos["sl_order_id"], new_sl, pos["size"], "buy")
+                            pos["sl"] = new_sl
+                            print(f"[TRAIL] SL SHORT actualizado a {new_sl:.2f}", flush=True)
+
+                # --- Salida por TP/SL fijo (HybridExit) ---
                 exit_sig, reason, px, updated = HybridExit.should_exit(
-                    pos_data, price, time.time()
+                    pos, price, time.time()
                 )
                 if exit_sig:
                     pnl = pos_mgr.close(sym, float(px), reason)
@@ -251,17 +292,17 @@ def main():
                         trade_info = {
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "symbol": sym,
-                            "side": "LONG" if pos_data["dir"] == 1 else "SHORT",
-                            "entry": float(pos_data["entry"]),
+                            "side": "LONG" if pos["dir"] == 1 else "SHORT",
+                            "entry": float(pos["entry"]),
                             "exit": float(px),
                             "pnl": float(pnl),
-                            "meta_score": float(pos_data.get("meta_score", 0)),
-                            "strategy": pos_data.get("strategy", "unknown")
+                            "meta_score": float(pos.get("meta_score", 0)),
+                            "strategy": pos.get("strategy", "unknown")
                         }
                         append_trade(trade_info)
                         breaker.update(engine.capital, pnl)
                         print(f"[TRADE] Cierre: {sym} | PnL: {pnl:+.2f}$ | Razón: {reason}", flush=True)
-                        duration = (time.time() - pos_data["entry_time"]) / 60.0
+                        duration = (time.time() - pos["entry_time"]) / 60.0
                         pnl_tracker.record_trade(sym, pnl, duration, trade_info["side"])
 
         except Exception as e:
@@ -293,7 +334,6 @@ def main():
                 safe_mode=safe_mode
             )
 
-            # ── Guardar snapshot de métricas tras cada ciclo ──
             save_snapshot(engine, pos_mgr, total_trades, current_sharpe)
 
         log_heartbeat(cycle+1, len(universe), trade_generated)
@@ -311,7 +351,7 @@ def main():
     log_checklist_item("Órdenes enviadas", total_trades > 0)
     log_checklist_item("TP funcionando", LIVE_EXECUTION)
     log_checklist_item("SL funcionando", LIVE_EXECUTION)
-    log_checklist_item("Trailing funcionando", True)
+    log_checklist_item("Trailing funcionando", LIVE_EXECUTION)
     log_checklist_item("Persistencia OK", True)
     log_checklist_item("Recovery OK", True)
     log_checklist_item("Metrics snapshot OK", True)
@@ -321,7 +361,6 @@ def main():
     log_checklist_item("Demo interaction OK", Config.EXECUTION_MODE == "demo")
     print("[CHECKLIST] =========================================", flush=True)
 
-    # ── Estadísticas finales ─────────────────────────────────
     print(f"[STATS] PnL/hour=0.0 | WinRate={engine.winrate:.1%} | Trades/day={total_trades/max(1,MAX_CYCLES)*288:.1f} | Sharpe={current_sharpe:.2f} | Drawdown={((engine.peak_capital-engine.capital)/engine.peak_capital*100):.2f}%", flush=True)
 
     control = load_control()
