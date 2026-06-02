@@ -7,20 +7,14 @@ class Config:
     EXCHANGE = "OKX"
     BASE_URL = "https://www.okx.com"
 
-    # ── Flags de módulos (toggles) ────────────────────────────
-    ENABLE_WALK_FORWARD = True
-    ENABLE_ADX_REAL = True
-    ENABLE_ATR_NORMALIZED = True
-    ENABLE_NETWORK_MONITOR = True
-    ENABLE_LATENCY_TRACKING = True
-    ENABLE_TREASURY = False             # desactivado por ahora
-    ENABLE_VELOCITY_MOMENTUM = True
-    AUTO_UNIVERSE_OPTIMIZATION = True
-
-    # ── Modo diagnóstico DEMO ─────────────────────────────────
-    DEMO_DIAGNOSTIC_MODE = False        # Solo para certificación mecánica. NUNCA en live.
+    # ── OKX Credenciales ──────────────────────────────────────
+    OKX_API_KEY = os.getenv("OKX_API_KEY", "76254b4d-2126-4bb5-a0f1-8c0aa463d90e")
+    OKX_API_SECRET = os.getenv("OKX_API_SECRET", "36F40E60584E4561E1E2475B979ABDDF")
+    OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "Waly200381!")
 
     # ── Velocity-Momentum Engine ──────────────────────────────
+    ENABLE_VELOCITY_MOMENTUM = True
+    AUTO_UNIVERSE_OPTIMIZATION = True
     MAX_TOP_N = 20
     MIN_TOP_N = 5
     VELOCITY_MIN_TRADES = 5
@@ -33,11 +27,6 @@ class Config:
 
     # ── Pydroid ──────────────────────────────────────────────
     PYDROID_MODE = False
-
-    # ── Credenciales (prioriza variables de entorno) ──────────
-    API_KEY = os.getenv("OKX_API_KEY", "76254b4d-2126-4bb5-a0f1-8c0aa463d90e")
-    API_SECRET = os.getenv("OKX_API_SECRET", "36F40E60584E4561E1E2475B979ABDDF")
-    PASSPHRASE = os.getenv("OKX_PASSPHRASE", "Waly200381!")
 
     # ── Universo base ─────────────────────────────────────────
     TOP_N = 100
