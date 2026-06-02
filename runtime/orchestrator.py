@@ -160,9 +160,8 @@ def main():
     if hasattr(engine, "status"):
         engine.status = state.get("status", "RUNNING")
 
-    router = OrderRouter(live=LIVE_EXECUTION)
-    pos_mgr = PositionManager()
-
+    router = OrderRouter(connector=conn, live=LIVE_EXECUTION)
+    
     for sym, pdata in state.get("open_positions", {}).items():
         pos_mgr.positions[sym] = {
             "symbol": sym,
