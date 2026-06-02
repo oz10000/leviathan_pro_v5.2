@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Leviathan V5.2B – Orchestrator unificado (Velocity‑Momentum First)
-Incluye auditoría completa del flujo: datos, features, ranking, filtros, señal,
-orden, fill, gestión de riesgo, persistencia y recovery.
+Incluye auditoría completa, reconciliación de posiciones y gestión dinámica de riesgo.
 """
 
 import sys, os, time, json
@@ -109,7 +108,6 @@ def main():
     data = {}
     candles_downloaded = 0
     features_ok = 0
-    ranked_ok = 0
 
     def _fetch_okx(symbol, timeframe, limit=200):
         return conn.fetch_candles(symbol, timeframe, limit)
@@ -135,7 +133,7 @@ def main():
     print(f"[MARKET DATA] Velas descargadas: {candles_downloaded} símbolos", flush=True)
     print(f"[AUDIT] FEATURES_OK={features_ok}", flush=True)
 
-    # ── Estado de la API y reconciliación ────────────────────
+    # ── Estado de la API ─────────────────────────────────────
     log_api_state(conn)
 
     if DEMO_DIAG_MODE:
@@ -145,7 +143,7 @@ def main():
         print("[DIAG] Diagnóstico completado. Finalizando ejecución.", flush=True)
         return
 
-    # ── Motor ─────────────────────────────────────────────────
+    # ── Motor y gestión de posiciones ────────────────────────
     strategies = [ExpansionStrategy(), PullbackStrategy(),
                   ReaccelerationStrategy(), DepressionBreakoutStrategy()]
     engine = RotationalEngine(strategies, universe, state["balance"], data)
@@ -160,8 +158,11 @@ def main():
     if hasattr(engine, "status"):
         engine.status = state.get("status", "RUNNING")
 
+    # ── Order Router con conector autenticado ─────────────────
     router = OrderRouter(connector=conn, live=LIVE_EXECUTION)
-    
+    pos_mgr = PositionManager()
+
+    # Restaurar posiciones abiertas desde el estado
     for sym, pdata in state.get("open_positions", {}).items():
         pos_mgr.positions[sym] = {
             "symbol": sym,
@@ -176,9 +177,11 @@ def main():
             "be_activated": pdata.get("be_activated", False)
         }
 
+    # ── Reconciliación (ahora pos_mgr ya existe) ─────────────
     if LIVE_EXECUTION:
         reconcile_positions(state, conn, pos_mgr)
 
+    # ── Circuit Breaker ──────────────────────────────────────
     breaker = CircuitBreaker(
         max_consecutive_losses=5,
         max_drawdown_pct=0.12,
@@ -216,7 +219,7 @@ def main():
             trade = engine.cycle()
             engine._loop_count += 1
 
-            # Auditoría de filtros (métricas agregadas desde el motor)
+            # Auditoría de filtros
             signals_filt = getattr(engine, "_signals_filtered", 0)
             ranked_ok = len(universe) - signals_filt
             print(f"[AUDIT] CYCLE={cycle+1} UNIVERSE={len(universe)} FEATURES_OK={features_ok} RANKED={ranked_ok} CANDIDATES={ranked_ok} FILTERED={signals_filt} FINAL_SIGNALS={1 if trade else 0}", flush=True)
@@ -229,15 +232,12 @@ def main():
                 )
                 print(f"[ORDER] STATUS={'ACKNOWLEDGED' if order.get('status')=='filled' else 'FAILED'} ORDER_ID={order.get('order_id','N/A')}", flush=True)
                 if order.get("status") == "filled":
-                    # Guardar sl_order_id en la posición
                     trade["sl_order_id"] = order.get("sl_order_id")
                     trade["be_activated"] = False
                     pos_mgr.open(trade)
                     print(f"[TRADE] Apertura: {trade['symbol']} {trade['strategy']} | Tamaño: {trade['size']:.4f} | Leverage: {trade['leverage']:.1f}x", flush=True)
                     print(f"[FILL] STATUS=FILLED AVG_PRICE={order.get('price', 0)}", flush=True)
-                    # Auditoría de orden
                     print(f"[AUDIT_ORDER] SYMBOL={trade['symbol']} SIDE={'LONG' if trade['dir']==1 else 'SHORT'} SIZE={trade['size']} TP={trade.get('tp','N/A')} SL={trade.get('sl','N/A')} STATUS=FILLED", flush=True)
-                    # Auditoría de TP/SL creados
                     if trade.get("sl_order_id"):
                         print(f"[AUDIT_RISK] SL_ORDER_ID={trade['sl_order_id']} CREATED=TRUE", flush=True)
                     if order.get("tp_order_id"):
@@ -256,7 +256,7 @@ def main():
                 if hasattr(engine, "perf_tracker"):
                     engine.perf_tracker.add_equity_snapshot(engine.capital)
 
-            # ── Gestión de salidas y actualización dinámica de stops ──
+            # ── Gestión dinámica de stops ────────────────────
             for sym in list(pos_mgr.get_active_symbols()):
                 df5 = data.get(sym, {}).get("5m")
                 if df5 is None or df5.empty:
@@ -267,7 +267,7 @@ def main():
                 if atr <= 0:
                     continue
 
-                # --- Break Even ---
+                # Break Even
                 if not pos.get("be_activated", False):
                     be_level = pos["entry"] + (1 if pos["dir"] == 1 else -1) * Config.BE_ATR * atr
                     if (pos["dir"] == 1 and price >= be_level) or (pos["dir"] == -1 and price <= be_level):
@@ -279,17 +279,17 @@ def main():
                         pos["be_activated"] = True
                         print(f"[AUDIT_RISK] SYMBOL={sym} BREAK_EVEN_TRIGGERED=TRUE NEW_SL={new_sl}", flush=True)
 
-                # --- Trailing Stop ---
+                # Trailing Stop
                 if pos.get("be_activated", False):
                     trail_atr = Config.TRAIL_ATR * atr
-                    if pos["dir"] == 1:  # LONG
+                    if pos["dir"] == 1:
                         new_sl = price - trail_atr
                         if new_sl > pos.get("sl", 0):
                             if pos.get("sl_order_id"):
                                 conn.modify_sl(sym, pos["sl_order_id"], new_sl, pos["size"], "sell")
                             pos["sl"] = new_sl
                             print(f"[AUDIT_RISK] SYMBOL={sym} TRAILING_UPDATED=TRUE NEW_SL={new_sl:.2f}", flush=True)
-                    else:  # SHORT
+                    else:
                         new_sl = price + trail_atr
                         if new_sl < pos.get("sl", float('inf')):
                             if pos.get("sl_order_id"):
@@ -297,10 +297,8 @@ def main():
                             pos["sl"] = new_sl
                             print(f"[AUDIT_RISK] SYMBOL={sym} TRAILING_UPDATED=TRUE NEW_SL={new_sl:.2f}", flush=True)
 
-                # --- Salida por TP/SL fijo ---
-                exit_sig, reason, px, updated = HybridExit.should_exit(
-                    pos, price, time.time()
-                )
+                # Salida por TP/SL fijo
+                exit_sig, reason, px, updated = HybridExit.should_exit(pos, price, time.time())
                 if exit_sig:
                     pnl = pos_mgr.close(sym, float(px), reason)
                     if pnl is not None:
@@ -376,11 +374,10 @@ def main():
     log_checklist_item("Demo interaction OK", Config.EXECUTION_MODE == "demo")
     print("[CHECKLIST] =========================================", flush=True)
 
-    # ── Auditoría de continuidad ───────────────────────────
+    # ── Auditoría de continuidad ─────────────────────────────
     print(f"[AUDIT_CONTINUITY] PREVIOUS_LOOP={state['loop_count']} RECOVERED=True", flush=True)
     print(f"[AUDIT_CONTINUITY] OPEN_POSITIONS_RESTORED={len(state.get('open_positions', {}))}", flush=True)
     print(f"[AUDIT_CONTINUITY] BOT_RESUMED=True", flush=True)
-    print(f"[AUDIT_RUNTIME] TOTAL_RUNTIME_HOURS={state['loop_count']*MAX_CYCLES/12:.1f} TOTAL_CYCLES={state['loop_count']} RESTARTS=... RECOVERIES_OK=...", flush=True)  # simplificado
 
     print(f"[STATS] PnL/hour=0.0 | WinRate={engine.winrate:.1%} | Trades/day={total_trades/max(1,MAX_CYCLES)*288:.1f} | Sharpe={current_sharpe:.2f} | Drawdown={((engine.peak_capital-engine.capital)/engine.peak_capital*100):.2f}%", flush=True)
 
