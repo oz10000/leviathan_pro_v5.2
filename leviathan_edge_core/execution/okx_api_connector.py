@@ -1,6 +1,6 @@
 import ccxt
-import pandas as pd
 import time
+import pandas as pd
 from datetime import datetime, timezone
 from config import Config
 
@@ -16,10 +16,14 @@ class OKXConnector:
         })
         self.exchange.headers.update({'x-simulated-trading': '1'})
 
+    def normalize_symbol(self, symbol: str) -> str:
+        if "/" in symbol and ":" in symbol:
+            base, rest = symbol.split("/")
+            quote = rest.split(":")[0]
+            return f"{base}-{quote}-SWAP"
+        return symbol
+
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
-        """
-        Descarga velas. Normaliza el timeframe a minúsculas (OKX espera '1h', no '1H').
-        """
         ccxt_symbol = f"{symbol}/USDT:USDT"
         timeframe = timeframe.lower().replace(" ", "")
         try:
@@ -45,69 +49,39 @@ class OKXConnector:
             return []
 
     def place_order(self, symbol: str, side: str, size: float,
-                    pos_side: str = None, tp: float = None, sl: float = None) -> dict:
-        """
-        Envía orden de mercado con TP/SL condicionales.
-        Retorna 'order_id', 'sl_order_id', 'tp_order_id' y 'status'.
-        """
-        ccxt_symbol = f"{symbol}/USDT:USDT"
+                    pos_side: str = None, leverage: int = 5, tp: float = None, sl: float = None) -> dict:
+        ccxt_symbol = self.normalize_symbol(symbol)
+        params = {
+            "posSide": pos_side,
+            "mgnMode": "isolated",
+            "leverage": str(leverage),
+            "tdMode": "isolated"
+        }
+        print(f"[ORDER_REQUEST] {ccxt_symbol} {side} {size} params={params}", flush=True)
         try:
-            # Cargar mercado bajo demanda para obtener min_size
-            try:
-                self.exchange.load_markets(reload=True, params={'instType': 'SWAP'})
-                market = self.exchange.market(ccxt_symbol)
-                min_size = market['limits']['amount']['min'] or 0.01
-            except:
-                min_size = 0.01
-            if size < min_size:
-                print(f"[SIZE ADJUST] {symbol}: {size} → {min_size}", flush=True)
-                size = min_size
-
-            params = {}
-            if tp and sl:
-                params.update({
-                    "tpTriggerPx": str(tp), "tpOrdPx": "-1",
-                    "slTriggerPx": str(sl), "slOrdPx": "-1"
-                })
             order = self.exchange.create_market_order(ccxt_symbol, side.lower(), size, params=params)
-            order_id = order.get("id", "")
-
-            # Obtener IDs de las órdenes condicionales (SL/TP)
-            sl_order_id = None
-            tp_order_id = None
-            if tp and sl:
-                time.sleep(1)  # breve espera para que se creen las órdenes condicionales
-                try:
-                    algo_orders = self.exchange.fetch_open_orders(ccxt_symbol, params={"orderType": "algo"})
-                    for ao in algo_orders:
-                        if ao.get("type") == "stop":
-                            sl_order_id = ao.get("id")
-                        elif ao.get("type") == "take_profit":
-                            tp_order_id = ao.get("id")
-                except Exception:
-                    pass
-
-            print(f"[ORDER PAYLOAD] {symbol} {side} size={size} tp={tp} sl={sl}", flush=True)
-            print(f"[ORDER RESPONSE] order_id={order_id} sl_id={sl_order_id} tp_id={tp_order_id}", flush=True)
+            print(f"[ORDER_RESPONSE] order_id={order.get('id')} status={order.get('status')}", flush=True)
+            time.sleep(2)
+            filled_order = self.exchange.fetch_order(order['id'], ccxt_symbol)
+            print(f"[EXCHANGE_CONFIRMATION] id={filled_order['id']} filled={filled_order.get('filled',0)}", flush=True)
             return {
-                "order_id": order_id,
-                "sl_order_id": sl_order_id,
-                "tp_order_id": tp_order_id,
-                "status": "filled"
+                "order_id": filled_order["id"],
+                "status": "filled" if filled_order.get("filled", 0) > 0 else "open",
+                "filled_amount": filled_order.get("filled", 0)
             }
         except Exception as e:
-            print(f"[ORDER EXCEPTION] {e}", flush=True)
-            return {"order_id": "", "sl_order_id": None, "tp_order_id": None,
-                    "status": "failed", "error": str(e)}
+            print(f"[ORDER_ERROR_RAW] {repr(e)}", flush=True)
+            if hasattr(e, 'args') and len(e.args) > 0:
+                print(f"[ORDER_ERROR_DETAIL] {e.args}", flush=True)
+            return {"status": "failed", "order_id": "N/A", "error": str(e)}
 
-    def modify_sl(self, symbol: str, sl_order_id: str, new_sl: float,
-                  amount: float, side: str) -> bool:
+    def modify_sl(self, symbol: str, sl_order_id: str, new_sl: float, amount: float, side: str) -> bool:
         if not sl_order_id:
             return False
         try:
             self.exchange.edit_order(
                 id=sl_order_id,
-                symbol=f"{symbol}/USDT:USDT",
+                symbol=self.normalize_symbol(symbol),
                 type='stop_market',
                 side=side,
                 amount=amount,
@@ -121,7 +95,7 @@ class OKXConnector:
             return False
 
     def close_position(self, symbol: str, pos_side: str) -> dict:
-        ccxt_symbol = f"{symbol}/USDT:USDT"
+        ccxt_symbol = self.normalize_symbol(symbol)
         side = "sell" if pos_side == "long" else "buy"
         try:
             self.exchange.create_market_order(ccxt_symbol, side, 0, params={"reduceOnly": True})
@@ -144,7 +118,7 @@ class OKXConnector:
 
     def cancel_order(self, order_id: str, symbol: str) -> bool:
         try:
-            self.exchange.cancel_order(order_id, f"{symbol}/USDT:USDT")
+            self.exchange.cancel_order(order_id, self.normalize_symbol(symbol))
             return True
         except Exception as e:
             print(f"[CANCEL ERROR] {e}", flush=True)
