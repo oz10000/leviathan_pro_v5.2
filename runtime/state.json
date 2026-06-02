@@ -19,18 +19,14 @@
     "div": 0.0,
     "ent": -698.5082151258558
   },
-  "loop_count": 520,
-  "last_execution": "2026-06-02T15:00:25.745279+00:00",
+  "loop_count": 528,
+  "last_execution": "2026-06-02T16:01:58.697019+00:00",
   "daps_x": 0.0,
   "equilibrium": 1.0,
   "daps_balance": 1.0,
   "open_positions": {},
   "status": "BOOT",
-  "last_signal": {
-    "symbol": "ACT",
-    "direction": "SHORT",
-    "score": 7503.547912111464
-  },
+  "last_signal": null,
   "meta": {
     "winrate": 0.0,
     "profit_factor": 0.0,
