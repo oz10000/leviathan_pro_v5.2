@@ -17,12 +17,17 @@ class OKXConnector:
         self.exchange.headers.update({'x-simulated-trading': '1'})
 
     def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
+        """
+        Descarga velas y retorna DataFrame con columnas:
+        ts, open, high, low, close, volume
+        """
         ccxt_symbol = f"{symbol}/USDT:USDT"
         try:
             ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
             if not ohlcv:
                 return pd.DataFrame()
-            df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "vol"])
+            # CORREGIDO: la columna de volumen se llama 'volume' para coincidir con feature_engine
+            df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
             df["ts"] = pd.to_datetime(df["ts"], unit="ms")
             return df.sort_values("ts").reset_index(drop=True)
         except Exception as e:
