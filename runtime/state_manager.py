@@ -1,4 +1,5 @@
-import aiosqlite, logging
+import aiosqlite
+import logging
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ class StateManager:
         return float(row[0]) if row else Config.CAPITAL
 
     async def save(self):
-        # No es necesario guardar todo en cada ciclo, se actualiza individualmente
+        # Se actualizan valores específicos en otras partes del código
         pass
 
     async def close(self):
