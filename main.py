@@ -1,17 +1,15 @@
 import asyncio
 import logging
-from runtime.orchestrator import Orchestrator
+from workflow.supervisor import Supervisor
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
-class Supervisor:
-    def __init__(self):
-        self.orch = Orchestrator()
+async def main():
+    supervisor = Supervisor()
+    await supervisor.run()
 
-    async def run(self):
-        while True:
-            try:
-                await self.orch.run_forever()
-            except Exception as e:
-                logger.critical(f"Orchestrator crashed: {e}. Restarting in 10s...")
-                await asyncio.sleep(10)
+if __name__ == "__main__":
+    asyncio.run(main())
