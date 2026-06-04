@@ -1,22 +1,32 @@
-import json, os
+import aiosqlite, logging
+from config import Config
 
-STATE_FILE = "runtime/runtime_state.json"
+logger = logging.getLogger(__name__)
 
 class StateManager:
-    @staticmethod
-    def load():
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, "r") as f:
-                return json.load(f)
-        return {"positions": {}, "open_orders": [], "last_signal": None, "cycle_count": 0}
+    def __init__(self):
+        self.db_path = Config.DB_PATH
+        self.db = None
 
-    @staticmethod
-    def save(state):
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=2)
+    async def initialize(self):
+        self.db = await aiosqlite.connect(self.db_path)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        await self.db.commit()
 
-    @staticmethod
-    def reconcile_with_exchange(connector, state):
-        positions = connector.get_positions()
-        state["positions"] = {p.get("symbol", ""): p for p in positions}
-        return state
+    async def get_capital(self) -> float:
+        cursor = await self.db.execute("SELECT value FROM state WHERE key='capital'")
+        row = await cursor.fetchone()
+        return float(row[0]) if row else Config.CAPITAL
+
+    async def save(self):
+        # No es necesario guardar todo en cada ciclo, se actualiza individualmente
+        pass
+
+    async def close(self):
+        if self.db:
+            await self.db.close()
