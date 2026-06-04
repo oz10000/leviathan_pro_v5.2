@@ -18,6 +18,12 @@ from monitoring.alert import send_alert
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
+    """
+    Orquestador principal 24/7.
+    - Gestiona el ciclo de trading completo.
+    - Mantiene la persistencia de estado.
+    - Integra reconciliación y alertas.
+    """
     def __init__(self):
         self.client = OKXClient()
         self.state = StateManager()
@@ -30,8 +36,11 @@ class Orchestrator:
         self.running = False
 
     async def run_forever(self):
+        """Bucle principal de ejecución continua."""
         self.running = True
         logger.info("Leviathan 24/7 started")
+
+        # Inicialización única
         await self.state.initialize()
         await self.client.set_position_mode()
 
@@ -39,16 +48,20 @@ class Orchestrator:
             try:
                 await self.run_cycle()
             except Exception as e:
-                logger.critical(f"Unhandled exception: {e}")
+                logger.critical(f"Unhandled exception in main loop: {e}")
                 traceback.print_exc()
                 await send_alert(f"CRITICAL: {e}")
                 await asyncio.sleep(10)
+            # Espera entre ciclos (ajustable según necesidades)
             await asyncio.sleep(60)
 
     async def run_cycle(self):
+        """Un ciclo completo de trading."""
+        # 1. Selección dinámica del universo
         symbols = fetch_top100_symbols(self.client)
         active = self.velocity_engine.filter(symbols, top_n=12)
 
+        # 2. Descarga de velas para el universo reducido
         market_data = {}
         for sym in active:
             c5 = self.client.get_candles(sym, "5m", 100)
@@ -56,22 +69,28 @@ class Orchestrator:
             c1h = self.client.get_candles(sym, "1H", 100)
             market_data[sym] = {"5m": c5, "15m": c15, "1h": c1h}
 
-        trade = self.rotational_engine.cycle(market_data, self.state.get_capital())
+        # 3. Generación de señales
+        capital = await self.state.get_capital()          # Obtiene capital actual desde SQLite
+        trade = self.rotational_engine.cycle(market_data, capital)
         if not trade:
             return
 
+        # 4. Verificación de límites de riesgo
         if self.pnl_tracker.daily_loss_exceeded():
             logger.warning("Daily loss limit reached. Skipping trade.")
             return
 
+        # 5. Ejecución de la orden
         order_result = self.order_router.send(trade)
         if not order_result or order_result.get("code") != "0":
             logger.error(f"Order failed: {order_result}")
             return
 
+        # 6. Registro de la posición abierta
         pos = order_result["data"][0]
         self.position_manager.add_position(pos)
 
+        # 7. Gestión de salidas para todas las posiciones abiertas
         open_positions = self.position_manager.get_open_positions()
         for p in open_positions:
             price = self._get_current_price(p["instId"])
@@ -90,16 +109,19 @@ class Orchestrator:
                     logger.info(f"Exit: {p['instId']} {reason} PnL={pnl:.2f}")
 
     def _get_current_price(self, instId: str) -> float:
+        """Obtiene el último precio de cierre desde velas de 5m."""
         candles = self.client.get_candles(instId, "5m", 1)
         return float(candles[0][4]) if candles else None
 
     def _calculate_pnl(self, pos: dict, exit_price: float) -> float:
+        """Calcula el PnL realizado de una posición."""
         entry = float(pos.get("avgPx", 0))
         sz = float(pos.get("pos", 0))
         side = 1 if pos["posSide"] == "long" else -1
         return (exit_price - entry) * sz * side
 
     async def shutdown(self):
+        """Detiene el orquestador de forma ordenada."""
         self.running = False
         await self.state.save()
         logger.info("Orchestrator shut down")
