@@ -1,4 +1,10 @@
-import json, time, hmac, hashlib, base64, requests, logging
+import json
+import time
+import hmac
+import hashlib
+import base64
+import requests
+import logging
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -62,6 +68,55 @@ class OKXClient:
                     time.sleep(2 ** attempt)
         return {"code": "-1", "msg": "request_failed"}
 
-    # Métodos públicos y privados sin cambios,
-    # solo se usa self.api_key, etc. que vienen de Config
-    # ... (resto igual a la versión anterior)
+    # --- Métodos públicos ---
+    def get_instruments(self, instType: str = "SWAP") -> list:
+        data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
+        return data.get("data", [])
+
+    def get_candles(self, instId: str, bar: str = "5m", limit: int = 100) -> list:
+        data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
+        return data.get("data", [])
+
+    # --- Métodos privados ---
+    def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
+        return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
+
+    def set_leverage(self, instId: str, lever: int, mgnMode: str = "isolated") -> dict:
+        return self._request("POST", "/api/v5/account/set-leverage", {
+            "instId": instId, "lever": str(lever), "mgnMode": mgnMode
+        })
+
+    def place_order(self, instId: str, side: str, sz: float, posSide: str,
+                    reduceOnly: bool = False, clOrdId: str = None) -> dict:
+        body = {
+            "instId": instId,
+            "tdMode": "isolated",
+            "side": side,
+            "ordType": "market",
+            "sz": str(sz),
+            "posSide": posSide,
+            "tgtCcy": "base_ccy",
+        }
+        if reduceOnly:
+            body["reduceOnly"] = True
+        if clOrdId:
+            body["clOrdId"] = clOrdId
+        return self._request("POST", "/api/v5/trade/order", body)
+
+    def get_positions(self, instType: str = "SWAP", instId: str = None) -> list:
+        params = f"/api/v5/account/positions?instType={instType}"
+        if instId:
+            params += f"&instId={instId}"
+        data = self._request("GET", params)
+        return data.get("data", [])
+
+    def close_position(self, instId: str, posSide: str) -> dict:
+        # Obtener tamaño actual de la posición
+        positions = self.get_positions(instId=instId)
+        for p in positions:
+            if p.get("posSide") == posSide:
+                sz = float(p.get("pos", 0))
+                if sz > 0:
+                    side = "sell" if posSide == "long" else "buy"
+                    return self.place_order(instId, side, sz, posSide, reduceOnly=True)
+        return {"code": "-1", "msg": "no_position"}
