@@ -1,156 +1,127 @@
-#!/usr/bin/env python3
-"""
-Leviathan V5.2B – Orchestrator 24/7 con loop continuo y timeout guard.
-Incluye state manager, reconciliación, logging estructurado y confirmación real de órdenes.
-"""
-
-import sys, os, time, json
-import numpy as np
-from datetime import datetime, timezone
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "leviathan_edge_core"))
-
+import asyncio
+import logging
+import time
+import traceback
 from config import Config
-from core.feature_engine import compute_features
-from strategies.expansion_strategy import ExpansionStrategy
-from strategies.pullback_strategy import PullbackStrategy
-from strategies.reacceleration_strategy import ReaccelerationStrategy
-from strategies.depression_breakout import DepressionBreakoutStrategy
-from execution.okx_api_connector import OKXConnector
-from execution.order_router import OrderRouter
-from execution.position_manager import PositionManager
+from execution.okx_api_connector import OKXClient
 from execution.rotational_engine import RotationalEngine
 from execution.exit_hybrid import HybridExit
-from portfolio.top100_selector import fetch_top100_symbols
-from runtime.persistence_engine import load_state, save_state, append_trade, logger
-from runtime.circuit_breaker import CircuitBreaker
-from runtime.observability import RuntimeMetrics
-from runtime.market_data_cache import load_or_fetch
-from runtime.control import load_control, save_control
-from runtime.velocity_momentum_engine import VelocityMomentumEngine
+from execution.order_router import OrderRouter
+from execution.position_manager import PositionManager
 from runtime.pnl_tracker import PnLTracker
-from runtime.reconciliation import reconcile_positions
 from runtime.state_manager import StateManager
-from runtime.timeout_guard import TimeoutGuard
+from portfolio.top100_selector import fetch_top100_symbols
+from portfolio.velocity_momentum_engine import VelocityMomentumEngine
+from okx.reconciler import Reconciler
+from monitoring.alert import send_alert
 
-LIVE_EXECUTION = Config.EXECUTION_MODE in ("demo", "live")
+logger = logging.getLogger(__name__)
 
-def structured_log(event_type, **fields):
-    log_line = f"[{event_type}] | exec_id={os.getenv('GITHUB_RUN_ID', 'local')}"
-    for k, v in fields.items():
-        log_line += f" | {k}={v}"
-    print(log_line, flush=True)
+class Orchestrator:
+    def __init__(self):
+        self.client = OKXClient()
+        self.state = StateManager()
+        self.pnl_tracker = PnLTracker()
+        self.position_manager = PositionManager()
+        self.reconciler = Reconciler(self.client, self.state)
+        self.order_router = OrderRouter(self.client)
+        self.rotational_engine = RotationalEngine()
+        self.velocity_engine = VelocityMomentumEngine()
+        self.running = False
 
-def validate_credentials(connector):
-    try:
-        connector.exchange.fetch_balance()
-        structured_log("AUTH_OK")
-    except Exception as e:
-        structured_log("FATAL_AUTH_ERROR", error=repr(e))
-        sys.exit(1)
+    async def run_forever(self):
+        """Bucle principal 24/7."""
+        self.running = True
+        logger.info("Leviathan DAPS-Ω 24/7 started")
 
-def main():
-    state = StateManager.load()
-    structured_log("BOOT", cycle_count=state.get("cycle_count", 0))
+        # Inicializar estado (cargar posiciones abiertas, etc.)
+        await self.state.initialize()
+        await self.client.set_position_mode()
 
-    conn = OKXConnector()
-    validate_credentials(conn)
+        while self.running:
+            try:
+                await self.run_cycle()
+            except Exception as e:
+                logger.critical(f"Unhandled exception in main loop: {e}")
+                traceback.print_exc()
+                await send_alert(f"CRITICAL: {e}")
+                await asyncio.sleep(10)
 
-    state = StateManager.reconcile_with_exchange(conn, state)
-    structured_log("RECONCILE", positions=len(state.get("positions", {})))
+            # Esperar hasta el siguiente minuto
+            await asyncio.sleep(60)
 
-    universe = fetch_top100_symbols()
-    if Config.ENABLE_VELOCITY_MOMENTUM:
-        vme = VelocityMomentumEngine()
-        if Config.AUTO_UNIVERSE_OPTIMIZATION:
-            universe = vme.optimal_universe(universe, Config.MIN_TOP_N, Config.MAX_TOP_N)
-        else:
-            scores = vme.rank_assets(universe)
-            if scores:
-                sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-                universe = [s for s, _ in sorted_scores[:Config.MAX_TOP_N]]
-            else:
-                universe = universe[:Config.MAX_TOP_N]
-    structured_log("SCANNER", universe_size=len(universe))
+    async def run_cycle(self):
+        """Un ciclo completo de trading."""
+        # 1. Actualizar universo
+        symbols = fetch_top100_symbols(self.client)
+        active_symbols = self.velocity_engine.filter(symbols, top_n=12)
 
-    data = {}
-    for sym in universe:
-        try:
-            df5 = load_or_fetch(sym, "5m", conn.fetch_candles, limit=200)
-            if df5 is None or df5.empty:
+        # 2. Obtener velas para el universo reducido
+        market_data = {}
+        for sym in active_symbols:
+            candles_5m = self.client.get_candles(sym, "5m", limit=100)
+            candles_15m = self.client.get_candles(sym, "15m", limit=100)
+            candles_1h = self.client.get_candles(sym, "1H", limit=100)
+            market_data[sym] = {
+                "5m": candles_5m,
+                "15m": candles_15m,
+                "1h": candles_1h,
+            }
+
+        # 3. Ejecutar motor rotacional
+        trade = self.rotational_engine.cycle(market_data, self.state.get_capital())
+        if not trade:
+            return
+
+        # 4. Verificar circuit breaker
+        if self.pnl_tracker.daily_loss_exceeded():
+            logger.warning("Daily loss limit reached. Skipping trade.")
+            return
+
+        # 5. Enviar orden
+        order_result = self.order_router.send(trade)
+        if not order_result or order_result.get("code") != "0":
+            logger.error(f"Order failed: {order_result}")
+            return
+
+        # 6. Registrar posición
+        self.position_manager.add_position(order_result["data"][0])
+
+        # 7. Verificar salidas (se ejecuta en cada ciclo)
+        await self.manage_exits()
+
+    async def manage_exits(self):
+        """Gestiona salidas de todas las posiciones abiertas."""
+        open_positions = self.position_manager.get_open_positions()
+        for pos in open_positions:
+            current_price = self._get_current_price(pos["instId"])
+            if current_price is None:
                 continue
-            df5 = compute_features(df5)
-            df15 = load_or_fetch(sym, "15m", conn.fetch_candles, limit=200)
-            df1h = load_or_fetch(sym, "1h", conn.fetch_candles, limit=200)
-            data[sym] = {"5m": df5, "15m": df15, "1h": df1h}
-            mtf_ok = all(not df.empty for df in [df5, df15, df1h] if df is not None)
-            structured_log("AUDIT_MTF", symbol=sym, status="PASS" if mtf_ok else "FAIL")
-        except Exception as e:
-            structured_log("FETCH_ERROR", symbol=sym, error=str(e))
+            should_exit, reason = HybridExit.evaluate(pos, current_price)
+            if should_exit:
+                side = "sell" if pos["posSide"] == "long" else "buy"
+                result = self.client.place_order(
+                    pos["instId"], side, float(pos["pos"]), pos["posSide"], reduceOnly=True
+                )
+                if result.get("code") == "0":
+                    self.position_manager.remove_position(pos["instId"], pos["posSide"])
+                    pnl = self._calculate_pnl(pos, current_price)
+                    self.pnl_tracker.record_trade(pnl)
+                    logger.info(f"Exit: {pos['instId']} {reason} PnL={pnl:.2f}")
 
-    strategies = [ExpansionStrategy(), PullbackStrategy(),
-                  ReaccelerationStrategy(), DepressionBreakoutStrategy()]
-    engine = RotationalEngine(strategies, universe, state.get("balance", 10000), data)
+    def _get_current_price(self, instId: str) -> float:
+        candles = self.client.get_candles(instId, "5m", limit=1)
+        if candles:
+            return float(candles[0][4])  # close
+        return None
 
-    router = OrderRouter(connector=conn, live=LIVE_EXECUTION)
-    pos_mgr = PositionManager()
+    def _calculate_pnl(self, pos: dict, exit_price: float) -> float:
+        entry = float(pos["avgPx"])
+        sz = float(pos["pos"])
+        side = 1 if pos["posSide"] == "long" else -1
+        return (exit_price - entry) * sz * side
 
-    breaker = CircuitBreaker()
-    guard = TimeoutGuard(max_minutes=330)
-    cycle = 0
-    total_trades = 0
-
-    while not guard.triggered():
-        cycle += 1
-        trade = engine.cycle()
-        engine._loop_count += 1
-
-        if trade:
-            order = router.send_with_feedback(
-                trade["symbol"],
-                "LONG" if trade["dir"] == 1 else "SHORT",
-                trade["size"], trade["atr"], trade["leverage"]
-            )
-            structured_log("ORDER", status=order.get("status"), order_id=order.get("order_id"))
-            if order.get("status") == "filled":
-                pos_mgr.open(trade)
-                total_trades += 1
-                structured_log("FILL_CONFIRMED", symbol=trade["symbol"], size=trade["size"])
-
-        for sym in list(pos_mgr.get_active_symbols()):
-            df5 = data.get(sym, {}).get("5m")
-            if df5 is None or df5.empty:
-                continue
-            price = float(df5["close"].iloc[-1])
-            pos = pos_mgr.positions[sym]
-            exit_sig, reason, px, updated = HybridExit.should_exit(pos, price, time.time())
-            if exit_sig:
-                pnl = pos_mgr.close(sym, float(px), reason)
-                if pnl is not None:
-                    trade_info = {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "symbol": sym,
-                        "side": "LONG" if pos["dir"] == 1 else "SHORT",
-                        "entry": float(pos["entry"]),
-                        "exit": float(px),
-                        "pnl": float(pnl),
-                        "meta_score": float(pos.get("meta_score", 0)),
-                        "strategy": pos.get("strategy", "unknown")
-                    }
-                    append_trade(trade_info)
-                    structured_log("POSITION_CLOSED", symbol=sym, pnl=pnl, reason=reason)
-
-        if cycle % 10 == 0:
-            StateManager.save({"cycle_count": cycle, "last_signal": trade, "positions": pos_mgr.positions})
-            structured_log("CHECKPOINT", cycle=cycle)
-
-        time.sleep(30)
-
-    StateManager.save({"cycle_count": cycle, "positions": pos_mgr.positions})
-    structured_log("SHUTDOWN_CLEAN", total_cycles=cycle, total_trades=total_trades)
-
-if __name__ == "__main__":
-    main()
+    async def shutdown(self):
+        self.running = False
+        await self.state.save()
+        logger.info("Orchestrator shut down")
