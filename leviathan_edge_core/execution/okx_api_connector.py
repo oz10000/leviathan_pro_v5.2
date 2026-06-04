@@ -1,125 +1,127 @@
-import ccxt
+import json
 import time
-import pandas as pd
-from datetime import datetime, timezone
+import hmac
+import hashlib
+import base64
+import requests
+import logging
 from config import Config
 
-class OKXConnector:
+logger = logging.getLogger(__name__)
+
+class OKXClient:
+    """
+    Cliente REST mejorado para OKX API v5.
+    - Firma HMAC manual con timestamp sincronizado.
+    - Cabecera x-simulated-trading para demo trading.
+    - Reintentos automáticos con backoff.
+    """
     def __init__(self):
-        self.exchange = ccxt.okx({
-            'apiKey': Config.OKX_API_KEY,
-            'secret': Config.OKX_API_SECRET,
-            'password': Config.OKX_PASSPHRASE if Config.OKX_PASSPHRASE else '',
-            'enableRateLimit': True,
-            'timeout': 30000,
-            'options': {'defaultType': 'swap'},
-        })
-        self.exchange.headers.update({'x-simulated-trading': '1'})
+        self.api_key = Config.OKX_API_KEY
+        self.secret = Config.OKX_API_SECRET
+        self.passphrase = Config.OKX_API_PASSPHRASE
+        self.demo = Config.OKX_DEMO
+        self.base_url = Config.REST_URL
+        self._offset = 0
+        self.sync_time()
 
-    def normalize_symbol(self, symbol: str) -> str:
-        if "/" in symbol and ":" in symbol:
-            base, rest = symbol.split("/")
-            quote = rest.split(":")[0]
-            return f"{base}-{quote}-SWAP"
-        return symbol
-
-    def fetch_candles(self, symbol: str, timeframe: str = "5m", limit: int = 200) -> pd.DataFrame:
-        ccxt_symbol = f"{symbol}/USDT:USDT"
-        timeframe = timeframe.lower().replace(" ", "")
+    def sync_time(self):
         try:
-            ohlcv = self.exchange.fetch_ohlcv(ccxt_symbol, timeframe=timeframe, limit=limit)
-            if not ohlcv:
-                return pd.DataFrame()
-            df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
-            df["ts"] = pd.to_datetime(df["ts"], unit="ms")
-            return df.sort_values("ts").reset_index(drop=True)
+            resp = requests.get(f"{self.base_url}/api/v5/public/time", timeout=5)
+            server_ts = int(resp.json()["data"][0]["ts"])
+            self._offset = server_ts - int(time.time() * 1000)
+            logger.info(f"Time synced. Offset: {self._offset}ms")
         except Exception as e:
-            print(f"[FETCH ERROR] {symbol} ({timeframe}): {e}", flush=True)
-            return pd.DataFrame()
+            logger.warning(f"Time sync failed: {e}")
+            self._offset = 0
 
-    def fetch_tickers(self) -> list:
-        try:
-            tickers = self.exchange.fetch_tickers()
-            return [
-                {"symbol": s.replace("/USDT:USDT", ""), "last": t.get("last"),
-                 "quoteVolume": t.get("quoteVolume", 0)}
-                for s, t in tickers.items() if s.endswith("/USDT:USDT")
-            ]
-        except Exception:
-            return []
+    def _get_timestamp(self) -> str:
+        return str(int(time.time() * 1000) + self._offset)
 
-    def place_order(self, symbol: str, side: str, size: float,
-                    pos_side: str = None, leverage: int = 5, tp: float = None, sl: float = None) -> dict:
-        ccxt_symbol = self.normalize_symbol(symbol)
-        params = {
-            "posSide": pos_side,
-            "mgnMode": "isolated",
-            "leverage": str(leverage),
-            "tdMode": "isolated"
+    def _sign(self, method: str, path: str, body: str = "") -> dict:
+        timestamp = self._get_timestamp()
+        message = timestamp + method.upper() + path + body
+        mac = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256)
+        sign = base64.b64encode(mac.digest()).decode()
+        headers = {
+            "Content-Type": "application/json",
+            "OK-ACCESS-KEY": self.api_key,
+            "OK-ACCESS-SIGN": sign,
+            "OK-ACCESS-TIMESTAMP": timestamp,
+            "OK-ACCESS-PASSPHRASE": self.passphrase,
         }
-        print(f"[ORDER_REQUEST] {ccxt_symbol} {side} {size} params={params}", flush=True)
-        try:
-            order = self.exchange.create_market_order(ccxt_symbol, side.lower(), size, params=params)
-            print(f"[ORDER_RESPONSE] order_id={order.get('id')} status={order.get('status')}", flush=True)
-            time.sleep(2)
-            filled_order = self.exchange.fetch_order(order['id'], ccxt_symbol)
-            print(f"[EXCHANGE_CONFIRMATION] id={filled_order['id']} filled={filled_order.get('filled',0)}", flush=True)
-            return {
-                "order_id": filled_order["id"],
-                "status": "filled" if filled_order.get("filled", 0) > 0 else "open",
-                "filled_amount": filled_order.get("filled", 0)
-            }
-        except Exception as e:
-            print(f"[ORDER_ERROR_RAW] {repr(e)}", flush=True)
-            if hasattr(e, 'args') and len(e.args) > 0:
-                print(f"[ORDER_ERROR_DETAIL] {e.args}", flush=True)
-            return {"status": "failed", "order_id": "N/A", "error": str(e)}
+        if self.demo:
+            headers["x-simulated-trading"] = "1"
+        return headers
 
-    def modify_sl(self, symbol: str, sl_order_id: str, new_sl: float, amount: float, side: str) -> bool:
-        if not sl_order_id:
-            return False
-        try:
-            self.exchange.edit_order(
-                id=sl_order_id,
-                symbol=self.normalize_symbol(symbol),
-                type='stop_market',
-                side=side,
-                amount=amount,
-                price=None,
-                params={'stopLossPrice': new_sl}
-            )
-            print(f"[MODIFY SL] {symbol}: SL actualizado a {new_sl}", flush=True)
-            return True
-        except Exception as e:
-            print(f"[MODIFY SL ERROR] {e}", flush=True)
-            return False
+    def _request(self, method: str, path: str, body: dict = None, retry: int = 3) -> dict:
+        url = self.base_url + path
+        body_str = json.dumps(body) if body else ""
+        for attempt in range(1, retry + 1):
+            try:
+                headers = self._sign(method, path, body_str)
+                if method == "GET":
+                    resp = requests.get(url, headers=headers, timeout=10)
+                else:
+                    resp = requests.post(url, headers=headers, data=body_str, timeout=10)
+                if resp.status_code == 200:
+                    return resp.json()
+                else:
+                    logger.error(f"HTTP {resp.status_code}: {resp.text}")
+            except requests.RequestException as e:
+                logger.warning(f"Request failed (attempt {attempt}/{retry}): {e}")
+                if attempt < retry:
+                    time.sleep(2 ** attempt)
+        return {"code": "-1", "msg": "request_failed"}
 
-    def close_position(self, symbol: str, pos_side: str) -> dict:
-        ccxt_symbol = self.normalize_symbol(symbol)
-        side = "sell" if pos_side == "long" else "buy"
-        try:
-            self.exchange.create_market_order(ccxt_symbol, side, 0, params={"reduceOnly": True})
-            return {"status": "closed"}
-        except Exception as e:
-            return {"status": "failed", "error": str(e)}
+    # --- Public ---
+    def get_instruments(self, instType: str = "SWAP") -> list:
+        data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
+        return data.get("data", [])
 
-    def get_positions(self) -> list:
-        try:
-            return self.exchange.fetch_positions()
-        except Exception:
-            return []
+    def get_candles(self, instId: str, bar: str = "5m", limit: int = 100) -> list:
+        data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
+        return data.get("data", [])
 
-    def get_balance(self) -> float:
-        try:
-            balance = self.exchange.fetch_balance()
-            return float(balance.get("USDT", {}).get("free", 0.0))
-        except Exception:
-            return 0.0
+    # --- Private ---
+    def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
+        return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
 
-    def cancel_order(self, order_id: str, symbol: str) -> bool:
-        try:
-            self.exchange.cancel_order(order_id, self.normalize_symbol(symbol))
-            return True
-        except Exception as e:
-            print(f"[CANCEL ERROR] {e}", flush=True)
-            return False
+    def set_leverage(self, instId: str, lever: int, mgnMode: str = "isolated") -> dict:
+        return self._request("POST", "/api/v5/account/set-leverage", {
+            "instId": instId, "lever": str(lever), "mgnMode": mgnMode
+        })
+
+    def place_order(self, instId: str, side: str, sz: float, posSide: str,
+                    reduceOnly: bool = False, clOrdId: str = None) -> dict:
+        body = {
+            "instId": instId,
+            "tdMode": "isolated",
+            "side": side,
+            "ordType": "market",
+            "sz": str(sz),
+            "posSide": posSide,
+            "tgtCcy": "base_ccy",
+        }
+        if reduceOnly:
+            body["reduceOnly"] = True
+        if clOrdId:
+            body["clOrdId"] = clOrdId
+        return self._request("POST", "/api/v5/trade/order", body)
+
+    def get_positions(self, instType: str = "SWAP", instId: str = None) -> list:
+        params = f"/api/v5/account/positions?instType={instType}"
+        if instId:
+            params += f"&instId={instId}"
+        data = self._request("GET", params)
+        return data.get("data", [])
+
+    def close_position(self, instId: str, posSide: str) -> dict:
+        positions = self.get_positions(instId=instId)
+        for p in positions:
+            if p.get("posSide") == posSide:
+                sz = float(p.get("pos", 0))
+                if sz > 0:
+                    side = "sell" if posSide == "long" else "buy"
+                    return self.place_order(instId, side, sz, posSide, reduceOnly=True)
+        return {"code": "-1", "msg": "no_position"}
