@@ -9,7 +9,7 @@ from leviathan_edge_core.execution.exit_hybrid import HybridExit
 from leviathan_edge_core.execution.order_router import OrderRouter
 from leviathan_edge_core.execution.position_manager import PositionManager
 from leviathan_edge_core.portfolio.top100_selector import fetch_top100_symbols
-from leviathan_edge_core.portfolio.velocity_momentum_engine import VelocityMomentumEngine
+from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumEngine
 from runtime.pnl_tracker import PnLTracker
 from runtime.state_manager import StateManager
 from okx.reconciler import Reconciler
@@ -32,15 +32,13 @@ class Orchestrator:
         self.reconciler = Reconciler(self.client, self.state)
         self.order_router = OrderRouter(self.client)
         self.rotational_engine = RotationalEngine()
-        self.velocity_engine = VelocityMomentumEngine()
+        self.velocity_engine = VelocityMomentumEngine()   # nuevo motor VM
         self.running = False
 
     async def run_forever(self):
         """Bucle principal de ejecución continua."""
         self.running = True
         logger.info("Leviathan 24/7 started")
-
-        # Inicialización única
         await self.state.initialize()
         await self.client.set_position_mode()
 
@@ -52,14 +50,13 @@ class Orchestrator:
                 traceback.print_exc()
                 await send_alert(f"CRITICAL: {e}")
                 await asyncio.sleep(10)
-            # Espera entre ciclos (ajustable según necesidades)
             await asyncio.sleep(60)
 
     async def run_cycle(self):
         """Un ciclo completo de trading."""
         # 1. Selección dinámica del universo
         symbols = fetch_top100_symbols(self.client)
-        active = self.velocity_engine.filter(symbols, top_n=12)
+        active = self.velocity_engine.filter(symbols, top_n=12)  # filtro VM real
 
         # 2. Descarga de velas para el universo reducido
         market_data = {}
@@ -70,7 +67,7 @@ class Orchestrator:
             market_data[sym] = {"5m": c5, "15m": c15, "1h": c1h}
 
         # 3. Generación de señales
-        capital = await self.state.get_capital()          # Obtiene capital actual desde SQLite
+        capital = await self.state.get_capital()
         trade = self.rotational_engine.cycle(market_data, capital)
         if not trade:
             return
@@ -109,19 +106,16 @@ class Orchestrator:
                     logger.info(f"Exit: {p['instId']} {reason} PnL={pnl:.2f}")
 
     def _get_current_price(self, instId: str) -> float:
-        """Obtiene el último precio de cierre desde velas de 5m."""
         candles = self.client.get_candles(instId, "5m", 1)
         return float(candles[0][4]) if candles else None
 
     def _calculate_pnl(self, pos: dict, exit_price: float) -> float:
-        """Calcula el PnL realizado de una posición."""
         entry = float(pos.get("avgPx", 0))
         sz = float(pos.get("pos", 0))
         side = 1 if pos["posSide"] == "long" else -1
         return (exit_price - entry) * sz * side
 
     async def shutdown(self):
-        """Detiene el orquestador de forma ordenada."""
         self.running = False
         await self.state.save()
         logger.info("Orchestrator shut down")
