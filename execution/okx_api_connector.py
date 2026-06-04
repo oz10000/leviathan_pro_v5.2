@@ -1,10 +1,4 @@
-import json
-import time
-import hmac
-import hashlib
-import base64
-import requests
-import logging
+import json, time, hmac, hashlib, base64, requests, logging
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -111,7 +105,6 @@ class OKXClient:
         return data.get("data", [])
 
     def close_position(self, instId: str, posSide: str) -> dict:
-        # Obtener tamaño actual de la posición
         positions = self.get_positions(instId=instId)
         for p in positions:
             if p.get("posSide") == posSide:
