@@ -26,6 +26,6 @@ class Reconciler:
             rest_pos = float(rp.get("pos", 0))
             ws_pos = self.ws_positions.get(key, 0)
             if rest_pos > 0 and ws_pos == 0:
-                logger.warning(f"Ghost position detected: {key}. Closing...")
+                logger.warning(f"Ghost position {key} detected. Closing.")
                 instId, posSide = key.split(":")
                 self.client.close_position(instId, posSide)
