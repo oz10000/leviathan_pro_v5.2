@@ -1,7 +1,4 @@
-import asyncio
-import logging
-import time
-import traceback
+import asyncio, logging, time, traceback
 from config import Config
 from execution.okx_api_connector import OKXClient
 from execution.rotational_engine import RotationalEngine
@@ -30,11 +27,8 @@ class Orchestrator:
         self.running = False
 
     async def run_forever(self):
-        """Bucle principal 24/7."""
         self.running = True
-        logger.info("Leviathan DAPS-Ω 24/7 started")
-
-        # Inicializar estado (cargar posiciones abiertas, etc.)
+        logger.info("Leviathan 24/7 started")
         await self.state.initialize()
         await self.client.set_position_mode()
 
@@ -42,82 +36,67 @@ class Orchestrator:
             try:
                 await self.run_cycle()
             except Exception as e:
-                logger.critical(f"Unhandled exception in main loop: {e}")
+                logger.critical(f"Unhandled exception: {e}")
                 traceback.print_exc()
                 await send_alert(f"CRITICAL: {e}")
                 await asyncio.sleep(10)
-
-            # Esperar hasta el siguiente minuto
             await asyncio.sleep(60)
 
     async def run_cycle(self):
-        """Un ciclo completo de trading."""
-        # 1. Actualizar universo
+        # Universo
         symbols = fetch_top100_symbols(self.client)
-        active_symbols = self.velocity_engine.filter(symbols, top_n=12)
+        active = self.velocity_engine.filter(symbols, top_n=12)
 
-        # 2. Obtener velas para el universo reducido
+        # Velas
         market_data = {}
-        for sym in active_symbols:
-            candles_5m = self.client.get_candles(sym, "5m", limit=100)
-            candles_15m = self.client.get_candles(sym, "15m", limit=100)
-            candles_1h = self.client.get_candles(sym, "1H", limit=100)
-            market_data[sym] = {
-                "5m": candles_5m,
-                "15m": candles_15m,
-                "1h": candles_1h,
-            }
+        for sym in active:
+            c5 = self.client.get_candles(sym, "5m", 100)
+            c15 = self.client.get_candles(sym, "15m", 100)
+            c1h = self.client.get_candles(sym, "1H", 100)
+            market_data[sym] = {"5m": c5, "15m": c15, "1h": c1h}
 
-        # 3. Ejecutar motor rotacional
+        # Señal
         trade = self.rotational_engine.cycle(market_data, self.state.get_capital())
         if not trade:
             return
 
-        # 4. Verificar circuit breaker
         if self.pnl_tracker.daily_loss_exceeded():
             logger.warning("Daily loss limit reached. Skipping trade.")
             return
 
-        # 5. Enviar orden
         order_result = self.order_router.send(trade)
         if not order_result or order_result.get("code") != "0":
             logger.error(f"Order failed: {order_result}")
             return
 
-        # 6. Registrar posición
-        self.position_manager.add_position(order_result["data"][0])
+        pos = order_result["data"][0]
+        self.position_manager.add_position(pos)
 
-        # 7. Verificar salidas (se ejecuta en cada ciclo)
-        await self.manage_exits()
-
-    async def manage_exits(self):
-        """Gestiona salidas de todas las posiciones abiertas."""
+        # Gestionar salidas
         open_positions = self.position_manager.get_open_positions()
-        for pos in open_positions:
-            current_price = self._get_current_price(pos["instId"])
-            if current_price is None:
+        for p in open_positions:
+            price = self._get_current_price(p["instId"])
+            if price is None:
                 continue
-            should_exit, reason = HybridExit.evaluate(pos, current_price)
-            if should_exit:
-                side = "sell" if pos["posSide"] == "long" else "buy"
+            exit_signal, reason = HybridExit.evaluate(p, price)
+            if exit_signal:
+                side = "sell" if p["posSide"] == "long" else "buy"
                 result = self.client.place_order(
-                    pos["instId"], side, float(pos["pos"]), pos["posSide"], reduceOnly=True
+                    p["instId"], side, float(p["pos"]), p["posSide"], reduceOnly=True
                 )
                 if result.get("code") == "0":
-                    self.position_manager.remove_position(pos["instId"], pos["posSide"])
-                    pnl = self._calculate_pnl(pos, current_price)
+                    self.position_manager.remove_position(p["instId"], p["posSide"])
+                    pnl = self._calculate_pnl(p, price)
                     self.pnl_tracker.record_trade(pnl)
-                    logger.info(f"Exit: {pos['instId']} {reason} PnL={pnl:.2f}")
+                    logger.info(f"Exit: {p['instId']} {reason} PnL={pnl:.2f}")
 
     def _get_current_price(self, instId: str) -> float:
-        candles = self.client.get_candles(instId, "5m", limit=1)
-        if candles:
-            return float(candles[0][4])  # close
-        return None
+        candles = self.client.get_candles(instId, "5m", 1)
+        return float(candles[0][4]) if candles else None
 
     def _calculate_pnl(self, pos: dict, exit_price: float) -> float:
-        entry = float(pos["avgPx"])
-        sz = float(pos["pos"])
+        entry = float(pos.get("avgPx", 0))
+        sz = float(pos.get("pos", 0))
         side = 1 if pos["posSide"] == "long" else -1
         return (exit_price - entry) * sz * side
 
