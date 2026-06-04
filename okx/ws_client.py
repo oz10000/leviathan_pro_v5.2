@@ -3,21 +3,22 @@ import json
 import time
 import logging
 import websockets
+import hmac
+import hashlib
+import base64
 from config import Config
-from okx.auth import sign  # misma función de firma que usa REST
 
 logger = logging.getLogger(__name__)
 
 class OKXWebSocket:
-    def __init__(self, bus=None):
-        self.bus = bus
+    def __init__(self):
         self.ws_public = None
         self.ws_private = None
-        self.shutdown_flag = False
+        self.shutdown = False
         self.reconnect_delay = 1
 
     async def connect(self):
-        while not self.shutdown_flag:
+        while not self.shutdown:
             try:
                 extra = {"x-simulated-trading": "1"} if Config.OKX_DEMO else {}
                 self.ws_public = await websockets.connect(
@@ -34,20 +35,22 @@ class OKXWebSocket:
                 self.reconnect_delay = 1
                 return
             except Exception as e:
-                logger.error(f"WS connection failed: {e}. Retrying in {self.reconnect_delay}s")
+                logger.error(f"WS connection failed: {e}. Retry in {self.reconnect_delay}s")
                 await asyncio.sleep(self.reconnect_delay)
                 self.reconnect_delay = min(self.reconnect_delay * 2, 300)
 
     async def _login(self):
         ts = str(int(time.time() * 1000))
-        sig = sign(Config.OKX_API_SECRET, ts, "GET", "/users/self/verify")
+        message = ts + "GET" + "/users/self/verify"
+        mac = hmac.new(Config.OKX_API_SECRET.encode(), message.encode(), hashlib.sha256)
+        sign = base64.b64encode(mac.digest()).decode()
         msg = {
             "op": "login",
             "args": [{
                 "apiKey": Config.OKX_API_KEY,
                 "passphrase": Config.OKX_API_PASSPHRASE,
                 "timestamp": ts,
-                "sign": sig
+                "sign": sign
             }]
         }
         await self.ws_private.send(json.dumps(msg))
@@ -56,7 +59,7 @@ class OKXWebSocket:
         if data.get("event") != "login" or data.get("code") != "0":
             raise Exception(f"WS login failed: {data}")
 
-    async def subscribe_public(self, symbols: list[str]):
+    async def subscribe_public(self, symbols):
         for sym in symbols:
             msg = {"op": "subscribe", "args": [{"channel": "candle5m", "instId": sym}]}
             await self.ws_public.send(json.dumps(msg))
@@ -67,7 +70,7 @@ class OKXWebSocket:
             await self.ws_private.send(json.dumps(msg))
 
     async def listen(self, on_candle, on_order, on_position):
-        async def handle_ws(ws, source):
+        async def handle(ws, name):
             try:
                 async for raw in ws:
                     data = json.loads(raw)
@@ -82,15 +85,15 @@ class OKXWebSocket:
                         elif ch == "positions":
                             await on_position(item)
             except websockets.ConnectionClosed:
-                logger.warning(f"WS {source} closed")
+                logger.warning(f"WS {name} closed")
         tasks = [
-            asyncio.create_task(handle_ws(self.ws_public, "public")),
-            asyncio.create_task(handle_ws(self.ws_private, "private")),
+            asyncio.create_task(handle(self.ws_public, "public")),
+            asyncio.create_task(handle(self.ws_private, "private")),
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def close(self):
-        self.shutdown_flag = True
+        self.shutdown = True
         if self.ws_public:
             await self.ws_public.close()
         if self.ws_private:
