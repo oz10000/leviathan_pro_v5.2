@@ -25,6 +25,7 @@ from edge_monitor import EdgeMonitor
 from runtime.state_manager import StateManager
 from runtime.pnl_tracker import PnLTracker
 from monitoring.alert import send_alert
+from edge_monitor import EdgeMonitor
 
 logger = logging.getLogger(__name__)
 
