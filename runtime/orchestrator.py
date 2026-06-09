@@ -12,20 +12,14 @@ from leviathan_edge_core.execution.position_manager import PositionManager
 from leviathan_edge_core.portfolio.top100_selector import fetch_top100_symbols
 from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumEngine
 from leviathan_edge_core.core.feature_engine import FeatureEngine
-from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceEngine
-from leviathan_edge_core.convergence.divergence_detector import DivergenceDetector
-from leviathan_edge_core.convergence.market_entropy import MarketEntropy
-from leviathan_edge_core.daps.core import DAPSEngine
+from leviathan_edge_core.daps.daps_core import DAPSEngine
 from leviathan_edge_core.risk.risk_manager import RiskManager
 from leviathan_edge_core.risk.kelly import KellySizer
 from leviathan_edge_core.risk.circuit_breaker import CircuitBreaker
-from leviathan_edge_core.ml.ml_model import MLModel
-from leviathan_edge_core.ml.ensemble import Ensemble
 from edge_monitor import EdgeMonitor
 from runtime.state_manager import StateManager
 from runtime.pnl_tracker import PnLTracker
 from monitoring.alert import send_alert
-from edge_monitor import EdgeMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +37,6 @@ class Orchestrator:
         self.rotational_engine = RotationalEngine()
         self.order_router = OrderRouter(self.client)
         self.feature_engine = FeatureEngine()
-        self.mtf_engine = MTFConvergenceEngine()
-        self.divergence_detector = DivergenceDetector()
-        self.entropy_engine = MarketEntropy()
-        self.ml_model = MLModel()
-        self.ensemble = Ensemble()
         self.circuit_breaker = CircuitBreaker()
 
     def run(self):
@@ -55,7 +44,7 @@ class Orchestrator:
         end_time = start_time + Config.CYCLE_DURATION_MINUTES * 60
         logger.info(f"Cycle started. LIVE={Config.LIVE} Duration={Config.CYCLE_DURATION_MINUTES}min")
 
-        # Restaurar estado previo
+        # 1. Restaurar estado previo
         self.reconciler.restore_state()
         prev_positions = self.state_mgr.load_positions()
         reconciled = self.reconciler.reconcile_positions(prev_positions)
@@ -66,60 +55,49 @@ class Orchestrator:
             for sym, st in daps_snap.items():
                 self.daps.set_state(sym, st)
 
-        # Bucle de trading (cada minuto)
+        # 2. Bucle de trading
         while time.time() < end_time:
             try:
-                # 1. Actualizar universo
                 symbols = fetch_top100_symbols(self.client)
                 active_symbols = self.velocity_engine.filter(symbols, top_n=12)
 
-                # 2. Descargar velas y calcular features
                 market_data = {}
                 for sym in active_symbols:
                     candles_5m = self.client.get_candles(sym, "5m", limit=100)
                     if not candles_5m:
                         continue
-                    features = self.feature_engine.compute(pd.DataFrame(candles_5m))  # simplificado
-                    market_data[sym] = {
-                        "candles_5m": candles_5m,
-                        "features": features
-                    }
+                    features = self.feature_engine.compute(candles_5m)
+                    market_data[sym] = {"candles_5m": candles_5m, "features": features}
 
-                # 3. Generar señales con el motor rotacional
                 trade = self.rotational_engine.cycle(market_data, self.state_mgr.get_capital())
                 if trade is None:
                     time.sleep(60)
                     continue
 
-                # 4. Obtener Edge Score y modular con DAPS
                 edge_score = trade.get("edge_score", 0.5)
                 symbol = trade["symbol"]
                 closes = [c[4] for c in market_data[symbol]["candles_5m"]]
                 daps_factor = self.daps.step(symbol, closes, edge_score)
                 trade["edge_score"] = edge_score * daps_factor
 
-                # 5. Risk check
                 approved, size = self.risk.evaluate(trade, self.daps)
                 if not approved:
                     logger.info(f"Trade rejected by risk manager for {symbol}")
                     continue
 
-                # 6. Circuit breaker
                 if not self.circuit_breaker.check():
                     logger.warning("Circuit breaker triggered, halting trades")
                     break
 
-                # 7. Ejecutar orden
                 result = self.order_router.send(trade, size)
                 if result.get("code") != "0":
                     logger.error(f"Order failed: {result}")
                     continue
 
-                # 8. Registrar operación
-                self.pnl_tracker.record_trade(0.0)  # PnL se actualiza al cerrar
+                self.pnl_tracker.record_trade(0.0)
                 self.edge_monitor.record_trade(0.0)
 
-                # 9. Gestionar salidas de posiciones abiertas
+                # Gestionar salidas
                 for pos in self.position_manager.get_open_positions():
                     price = self._get_current_price(pos["instId"])
                     if price is None:
@@ -140,7 +118,7 @@ class Orchestrator:
 
             time.sleep(60)
 
-        # Persistir estado final
+        # 3. Guardar estado final
         self.state_mgr.save_daps_state({sym: self.daps.get_state(sym) for sym in self.daps.symbol_stats})
         self.edge_monitor.save_metrics("state/metrics.json")
         final_positions = self.position_manager.get_open_positions()
