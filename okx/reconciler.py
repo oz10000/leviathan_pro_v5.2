@@ -1,31 +1,60 @@
-import asyncio
 import logging
+import time
+import aiosqlite
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class Reconciler:
-    def __init__(self, client, state, interval=60):
+    def __init__(self, client):
         self.client = client
-        self.state = state
-        self.interval = interval
-        self.ws_positions = {}
+        self.db_path = Config.DB_PATH
+        self._ws_positions = {}
+        self._last_close = {}
 
-    async def on_ws_position(self, data):
-        key = f"{data['instId']}:{data['posSide']}"
-        self.ws_positions[key] = float(data.get("pos", 0))
+    async def restore_state(self):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS sent_orders (
+                    clOrdId TEXT PRIMARY KEY,
+                    timestamp INTEGER,
+                    symbol TEXT,
+                    side TEXT,
+                    size REAL
+                )
+            """)
+            await db.commit()
 
-    async def run(self):
-        while True:
-            await asyncio.sleep(self.interval)
-            await self.reconcile()
+    async def was_order_sent(self, clOrdId):
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT 1 FROM sent_orders WHERE clOrdId=?", (clOrdId,))
+            row = await cursor.fetchone()
+            return row is not None
 
-    async def reconcile(self):
-        rest_positions = self.client.get_positions()
-        for rp in rest_positions:
-            key = f"{rp['instId']}:{rp['posSide']}"
-            rest_pos = float(rp.get("pos", 0))
-            ws_pos = self.ws_positions.get(key, 0)
-            if rest_pos > 0 and ws_pos == 0:
-                logger.warning(f"Ghost position {key} detected. Closing.")
+    async def mark_order_sent(self, clOrdId, symbol, side, size):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO sent_orders VALUES (?,?,?,?,?)",
+                (clOrdId, int(time.time()), symbol, side, size)
+            )
+            await db.commit()
+
+    def reconcile_positions(self, local_positions):
+        remote_data = self.client.get_positions().get('data', [])
+        remote_map = {f"{p['instId']}:{p['posSide']}": float(p.get('pos', 0)) for p in remote_data}
+        local_map = {f"{p['instId']}:{p['posSide']}": float(p.get('pos', 0)) for p in local_positions}
+        for key in set(remote_map) | set(local_map):
+            r_pos = remote_map.get(key, 0)
+            l_pos = local_map.get(key, 0)
+            if abs(r_pos - l_pos) > 0.001:
                 instId, posSide = key.split(":")
-                self.client.close_position(instId, posSide)
+                if r_pos > 0 and l_pos == 0:
+                    logger.warning(f"Ghost position {key}, closing")
+                    self.client.close_position(instId, posSide)
+                elif l_pos > 0 and r_pos == 0:
+                    logger.warning(f"Missing position {key} locally, removing")
+        return [{"instId": p["instId"], "posSide": p["posSide"], "pos": p["pos"], "avgPx": p.get("avgPx", 0)}
+                for p in remote_data if float(p.get("pos", 0)) > 0]
+
+    def save_state(self, positions):
+        pass
