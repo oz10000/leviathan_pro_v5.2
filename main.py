@@ -1,15 +1,11 @@
-import asyncio
 import logging
-from workflow.supervisor import Supervisor
+from runtime.orchestrator import Orchestrator
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
-async def main():
-    supervisor = Supervisor()
-    await supervisor.run()
+def main():
+    orch = Orchestrator()
+    orch.run()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
