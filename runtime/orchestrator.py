@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import traceback
+from typing import Dict, Any
 from config import Config
 from leviathan_edge_core.execution.okx_api_connector import OKXClient
 from leviathan_edge_core.execution.rotational_engine import RotationalEngine
@@ -10,112 +11,149 @@ from leviathan_edge_core.execution.order_router import OrderRouter
 from leviathan_edge_core.execution.position_manager import PositionManager
 from leviathan_edge_core.portfolio.top100_selector import fetch_top100_symbols
 from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumEngine
-from runtime.pnl_tracker import PnLTracker
+from leviathan_edge_core.core.feature_engine import FeatureEngine
+from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceEngine
+from leviathan_edge_core.convergence.divergence_detector import DivergenceDetector
+from leviathan_edge_core.convergence.market_entropy import MarketEntropy
+from leviathan_edge_core.daps.core import DAPSEngine
+from leviathan_edge_core.risk.risk_manager import RiskManager
+from leviathan_edge_core.risk.kelly import KellySizer
+from leviathan_edge_core.risk.circuit_breaker import CircuitBreaker
+from leviathan_edge_core.ml.ml_model import MLModel
+from leviathan_edge_core.ml.ensemble import Ensemble
+from edge_monitor import EdgeMonitor
 from runtime.state_manager import StateManager
-from okx.reconciler import Reconciler
+from runtime.pnl_tracker import PnLTracker
 from monitoring.alert import send_alert
 
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
-    """
-    Orquestador principal 24/7.
-    - Gestiona el ciclo de trading completo.
-    - Mantiene la persistencia de estado.
-    - Integra reconciliación y alertas.
-    """
     def __init__(self):
         self.client = OKXClient()
-        self.state = StateManager()
+        self.state_mgr = StateManager()
+        self.reconciler = Reconciler(self.client)
+        self.daps = DAPSEngine(decay_lambda=Config.DAPS_DECAY_LAMBDA)
+        self.edge_monitor = EdgeMonitor(alert_threshold=Config.EDGE_ALERT_THRESHOLD)
+        self.risk = RiskManager(client=self.client, edge_monitor=self.edge_monitor)
         self.pnl_tracker = PnLTracker()
         self.position_manager = PositionManager()
-        self.reconciler = Reconciler(self.client, self.state)
-        self.order_router = OrderRouter(self.client)
+        self.velocity_engine = VelocityMomentumEngine()
         self.rotational_engine = RotationalEngine()
-        self.velocity_engine = VelocityMomentumEngine()   # nuevo motor VM
-        self.running = False
+        self.order_router = OrderRouter(self.client)
+        self.feature_engine = FeatureEngine()
+        self.mtf_engine = MTFConvergenceEngine()
+        self.divergence_detector = DivergenceDetector()
+        self.entropy_engine = MarketEntropy()
+        self.ml_model = MLModel()
+        self.ensemble = Ensemble()
+        self.circuit_breaker = CircuitBreaker()
 
-    async def run_forever(self):
-        """Bucle principal de ejecución continua."""
-        self.running = True
-        logger.info("Leviathan 24/7 started")
-        await self.state.initialize()
-        await self.client.set_position_mode()
+    def run(self):
+        start_time = time.time()
+        end_time = start_time + Config.CYCLE_DURATION_MINUTES * 60
+        logger.info(f"Cycle started. LIVE={Config.LIVE} Duration={Config.CYCLE_DURATION_MINUTES}min")
 
-        while self.running:
+        # Restaurar estado previo
+        self.reconciler.restore_state()
+        prev_positions = self.state_mgr.load_positions()
+        reconciled = self.reconciler.reconcile_positions(prev_positions)
+        self.state_mgr.save_positions(reconciled)
+
+        daps_snap = self.state_mgr.load_daps_state()
+        if daps_snap:
+            for sym, st in daps_snap.items():
+                self.daps.set_state(sym, st)
+
+        # Bucle de trading (cada minuto)
+        while time.time() < end_time:
             try:
-                await self.run_cycle()
+                # 1. Actualizar universo
+                symbols = fetch_top100_symbols(self.client)
+                active_symbols = self.velocity_engine.filter(symbols, top_n=12)
+
+                # 2. Descargar velas y calcular features
+                market_data = {}
+                for sym in active_symbols:
+                    candles_5m = self.client.get_candles(sym, "5m", limit=100)
+                    if not candles_5m:
+                        continue
+                    features = self.feature_engine.compute(pd.DataFrame(candles_5m))  # simplificado
+                    market_data[sym] = {
+                        "candles_5m": candles_5m,
+                        "features": features
+                    }
+
+                # 3. Generar señales con el motor rotacional
+                trade = self.rotational_engine.cycle(market_data, self.state_mgr.get_capital())
+                if trade is None:
+                    time.sleep(60)
+                    continue
+
+                # 4. Obtener Edge Score y modular con DAPS
+                edge_score = trade.get("edge_score", 0.5)
+                symbol = trade["symbol"]
+                closes = [c[4] for c in market_data[symbol]["candles_5m"]]
+                daps_factor = self.daps.step(symbol, closes, edge_score)
+                trade["edge_score"] = edge_score * daps_factor
+
+                # 5. Risk check
+                approved, size = self.risk.evaluate(trade, self.daps)
+                if not approved:
+                    logger.info(f"Trade rejected by risk manager for {symbol}")
+                    continue
+
+                # 6. Circuit breaker
+                if not self.circuit_breaker.check():
+                    logger.warning("Circuit breaker triggered, halting trades")
+                    break
+
+                # 7. Ejecutar orden
+                result = self.order_router.send(trade, size)
+                if result.get("code") != "0":
+                    logger.error(f"Order failed: {result}")
+                    continue
+
+                # 8. Registrar operación
+                self.pnl_tracker.record_trade(0.0)  # PnL se actualiza al cerrar
+                self.edge_monitor.record_trade(0.0)
+
+                # 9. Gestionar salidas de posiciones abiertas
+                for pos in self.position_manager.get_open_positions():
+                    price = self._get_current_price(pos["instId"])
+                    if price is None:
+                        continue
+                    exit_signal, reason = HybridExit.evaluate(pos, price)
+                    if exit_signal:
+                        self.client.close_position(pos["instId"], pos["posSide"])
+                        pnl = self._calculate_pnl(pos, price)
+                        self.pnl_tracker.record_trade(pnl)
+                        self.edge_monitor.record_trade(pnl)
+                        self.position_manager.remove_position(pos["instId"], pos["posSide"])
+                        logger.info(f"Exit: {pos['instId']} {reason} PnL={pnl:.2f}")
+
             except Exception as e:
-                logger.critical(f"Unhandled exception in main loop: {e}")
-                traceback.print_exc()
-                await send_alert(f"CRITICAL: {e}")
-                await asyncio.sleep(10)
-            await asyncio.sleep(60)
+                logger.error(f"Error in trading loop: {e}", exc_info=True)
+                send_alert(f"Leviathan cycle error: {e}")
+                time.sleep(30)
 
-    async def run_cycle(self):
-        """Un ciclo completo de trading."""
-        # 1. Selección dinámica del universo
-        symbols = fetch_top100_symbols(self.client)
-        active = self.velocity_engine.filter(symbols, top_n=12)  # filtro VM real
+            time.sleep(60)
 
-        # 2. Descarga de velas para el universo reducido
-        market_data = {}
-        for sym in active:
-            c5 = self.client.get_candles(sym, "5m", 100)
-            c15 = self.client.get_candles(sym, "15m", 100)
-            c1h = self.client.get_candles(sym, "1H", 100)
-            market_data[sym] = {"5m": c5, "15m": c15, "1h": c1h}
-
-        # 3. Generación de señales
-        capital = await self.state.get_capital()
-        trade = self.rotational_engine.cycle(market_data, capital)
-        if not trade:
-            return
-
-        # 4. Verificación de límites de riesgo
-        if self.pnl_tracker.daily_loss_exceeded():
-            logger.warning("Daily loss limit reached. Skipping trade.")
-            return
-
-        # 5. Ejecución de la orden
-        order_result = self.order_router.send(trade)
-        if not order_result or order_result.get("code") != "0":
-            logger.error(f"Order failed: {order_result}")
-            return
-
-        # 6. Registro de la posición abierta
-        pos = order_result["data"][0]
-        self.position_manager.add_position(pos)
-
-        # 7. Gestión de salidas para todas las posiciones abiertas
-        open_positions = self.position_manager.get_open_positions()
-        for p in open_positions:
-            price = self._get_current_price(p["instId"])
-            if price is None:
-                continue
-            exit_signal, reason = HybridExit.evaluate(p, price)
-            if exit_signal:
-                side = "sell" if p["posSide"] == "long" else "buy"
-                result = self.client.place_order(
-                    p["instId"], side, float(p["pos"]), p["posSide"], reduceOnly=True
-                )
-                if result.get("code") == "0":
-                    self.position_manager.remove_position(p["instId"], p["posSide"])
-                    pnl = self._calculate_pnl(p, price)
-                    self.pnl_tracker.record_trade(pnl)
-                    logger.info(f"Exit: {p['instId']} {reason} PnL={pnl:.2f}")
+        # Persistir estado final
+        self.state_mgr.save_daps_state({sym: self.daps.get_state(sym) for sym in self.daps.symbol_stats})
+        self.edge_monitor.save_metrics("state/metrics.json")
+        final_positions = self.position_manager.get_open_positions()
+        self.state_mgr.save_positions(final_positions)
+        logger.info("Cycle completed")
 
     def _get_current_price(self, instId: str) -> float:
-        candles = self.client.get_candles(instId, "5m", 1)
-        return float(candles[0][4]) if candles else None
+        candles = self.client.get_candles(instId, "5m", limit=1)
+        if candles:
+            return float(candles[0][4])
+        return None
 
-    def _calculate_pnl(self, pos: dict, exit_price: float) -> float:
+    def _calculate_pnl(self, pos: Dict[str, Any], exit_price: float) -> float:
         entry = float(pos.get("avgPx", 0))
         sz = float(pos.get("pos", 0))
         side = 1 if pos["posSide"] == "long" else -1
         return (exit_price - entry) * sz * side
-
-    async def shutdown(self):
-        self.running = False
-        await self.state.save()
-        logger.info("Orchestrator shut down")
