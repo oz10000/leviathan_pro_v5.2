@@ -1,0 +1,55 @@
+name: Leviathan Trading Cycle (4h)
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 8 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 16 * * *'
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+concurrency: trading-cycle
+
+jobs:
+  trading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download previous state
+        uses: actions/download-artifact@v4
+        with:
+          name: leviathan-state
+          path: state/
+        continue-on-error: true
+
+      - name: Run trading cycle
+        env:
+          OKX_DEMO_API_KEY: ${{ secrets.OKX_DEMO_API_KEY }}
+          OKX_DEMO_SECRET: ${{ secrets.OKX_DEMO_SECRET }}
+          OKX_DEMO_PASSPHRASE: ${{ secrets.OKX_DEMO_PASSPHRASE }}
+          OKX_LIVE_API_KEY: ${{ secrets.OKX_LIVE_API_KEY }}
+          OKX_LIVE_SECRET: ${{ secrets.OKX_LIVE_SECRET }}
+          OKX_LIVE_PASSPHRASE: ${{ secrets.OKX_LIVE_PASSPHRASE }}
+          LIVE: ${{ vars.LIVE || 'false' }}
+        run: python main.py
+
+      - name: Upload state for next cycle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leviathan-state
+          path: state/
+          retention-days: 7
