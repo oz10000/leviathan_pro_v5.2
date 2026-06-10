@@ -1,30 +1,24 @@
 import numpy as np
 
 class StatisticalGuard:
-    """
-    Bloquea el trading si el rendimiento reciente cae por debajo de umbrales mínimos.
-    """
-
     @staticmethod
-    def validate(pnl_history: list,
-                 min_winrate: float = 0.42,
-                 min_profit_factor: float = 1.15,
-                 min_expectancy: float = 0.0) -> bool:
-        if len(pnl_history) < 20:
+    def validate(pnl_history, max_drawdown_pct=0.15, min_trades=10, max_consecutive_losses=5):
+        if len(pnl_history) < min_trades:
             return True
 
-        pnl = np.array(pnl_history)
-        wins = pnl[pnl > 0]
-        losses = pnl[pnl <= 0]
+        equity = np.cumsum(pnl_history)
+        peak = np.maximum.accumulate(equity)
+        drawdown = (peak - equity) / (peak + 1e-8)
+        if np.max(drawdown) > max_drawdown_pct:
+            return False
 
-        winrate = len(wins) / len(pnl)
-        gp = wins.sum() if len(wins) > 0 else 0.0
-        gl = abs(losses.sum()) if len(losses) > 0 else 1e-8
-        pf = gp / gl
-        expectancy = pnl.mean()
+        consecutive = 0
+        for pnl in reversed(pnl_history):
+            if pnl <= 0:
+                consecutive += 1
+            else:
+                break
+        if consecutive >= max_consecutive_losses:
+            return False
 
-        return (
-            winrate >= min_winrate and
-            pf >= min_profit_factor and
-            expectancy >= min_expectancy
-        )
+        return True
