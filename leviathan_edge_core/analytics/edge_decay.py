@@ -1,21 +1,26 @@
 import numpy as np
-from collections import deque
 
 class EdgeDecay:
-    def __init__(self, window=50):
-        self.expectancy_ema = None
-        self.history = deque(maxlen=window)
-        self.alpha = 0.1
+    """
+    Modela la degradación temporal del Edge.
+    Si el Profit Factor reciente cae por debajo de un umbral, el Edge se considera en decadencia.
+    """
+    def __init__(self, window=50, threshold=1.1):
+        self.window = window
+        self.threshold = threshold
+        self.recent_pnl = []
 
-    def update(self, expectancy: float):
-        self.history.append(expectancy)
-        if self.expectancy_ema is None:
-            self.expectancy_ema = expectancy
-        else:
-            self.expectancy_ema = self.alpha * expectancy + (1 - self.alpha) * self.expectancy_ema
+    def update(self, pnl):
+        self.recent_pnl.append(pnl)
+        if len(self.recent_pnl) > self.window:
+            self.recent_pnl.pop(0)
 
-    def decay_factor(self) -> float:
-        if len(self.history) < 5:
-            return 1.0
-        recent = np.mean(list(self.history)[-10:]) if len(self.history) >= 10 else np.mean(list(self.history))
-        return np.clip(recent / (self.expectancy_ema + 1e-8), 0.3, 1.5)
+    def is_decaying(self):
+        if len(self.recent_pnl) < 10:
+            return False
+        wins = [p for p in self.recent_pnl if p > 0]
+        losses = [abs(p) for p in self.recent_pnl if p <= 0]
+        if sum(losses) == 0:
+            return False
+        pf = sum(wins) / sum(losses)
+        return pf < self.threshold
