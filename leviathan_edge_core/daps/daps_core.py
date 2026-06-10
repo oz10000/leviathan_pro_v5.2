@@ -23,3 +23,10 @@ class DAPSCore:
         self.gamma = max(0.1, min(0.8, self.gamma * (1.0 - Config.DAPS_DECAY) + 0.1 * (1.0 - error)))
         self.alpha = 1.0 - self.beta - self.gamma
         return self.x
+        # Añadir al final del archivo daps_core.py:
+class DAPSCore:
+    def __init__(self):
+        self.x = 0.0
+
+    def step(self, epsilon, x_hat):
+        self.x = 0.9 * self.x + 0.05 * epsilon + 0.02 * x_hat
