@@ -1,28 +1,31 @@
-import numpy as np
-from collections import deque
-from sklearn.cluster import KMeans
-
 class RegimeCluster:
-    def __init__(self, n_clusters=3):
-        self.n_clusters = n_clusters
-        self.buffer = deque(maxlen=500)
-        self.model = None
-        self.labels = None
+    """
+    Clasifica el régimen de mercado actual basado en volatilidad y tendencia.
+    Regímenes: trending, ranging, volatile, calm.
+    """
+    def __init__(self):
+        self.regime = "neutral"
+        self.volatility_history = []
+        self.trend_history = []
 
-    def update(self, features: dict):
-        self.buffer.append(list(features.values()))
-        if len(self.buffer) >= 30 and len(self.buffer) % 10 == 0:
-            data = np.array(self.buffer)
-            self.model = KMeans(n_clusters=self.n_clusters, n_init=1, random_state=42).fit(data)
-            self.labels = self.model.labels_
+    def update(self, volatility, trend_strength):
+        self.volatility_history.append(volatility)
+        self.trend_history.append(trend_strength)
+        if len(self.volatility_history) > 20:
+            self.volatility_history.pop(0)
+            self.trend_history.pop(0)
 
-    def current_label(self) -> int:
-        if self.model is None:
-            return -1
-        return self.model.predict(np.array([list(self.buffer[-1])]))[0]
+        avg_vol = sum(self.volatility_history) / len(self.volatility_history)
+        avg_trend = sum(self.trend_history) / len(self.trend_history)
 
-    def cluster_stability(self) -> float:
-        if self.labels is None:
-            return 0.0
-        dominant = np.bincount(self.labels[-min(100, len(self.labels)):]).max() / min(100, len(self.labels))
-        return dominant
+        if avg_vol > 0.03 and avg_trend > 0.5:
+            self.regime = "trending"
+        elif avg_vol < 0.01 and avg_trend < 0.2:
+            self.regime = "ranging"
+        elif avg_vol > 0.03:
+            self.regime = "volatile"
+        else:
+            self.regime = "calm"
+
+    def get_regime(self):
+        return self.regime
