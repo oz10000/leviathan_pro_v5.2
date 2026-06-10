@@ -1,30 +1,26 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 class TemporalResonance:
+    """
+    Detecta patrones de resonancia temporal: momentos del día donde las operaciones
+    tienen mayor probabilidad de éxito.
+    """
     def __init__(self):
-        self.hour_perf = {}
-        self.session_perf = {}
+        self.hourly_stats = {h: {"count": 0, "wins": 0} for h in range(24)}
 
-    def update(self, dt: datetime, pnl: float):
-        hour = dt.hour
-        session = "ASIA" if 0 <= hour < 8 else "EU" if 8 <= hour < 16 else "US"
-        self.hour_perf.setdefault(hour, []).append(pnl)
-        self.session_perf.setdefault(session, []).append(pnl)
+    def update(self, timestamp, pnl):
+        if isinstance(timestamp, datetime):
+            hour = timestamp.hour
+        else:
+            hour = datetime.fromtimestamp(timestamp, tz=timezone.utc).hour
+        self.hourly_stats[hour]["count"] += 1
+        if pnl > 0:
+            self.hourly_stats[hour]["wins"] += 1
 
-    def hour_score(self, hour: int) -> float:
-        pnls = self.hour_perf.get(hour, [])
-        if not pnls:
+    def resonance_score(self, hour=None):
+        if hour is None:
+            hour = datetime.now(timezone.utc).hour
+        stats = self.hourly_stats[hour]
+        if stats["count"] < 5:
             return 0.5
-        wr = sum(1 for p in pnls if p > 0) / len(pnls)
-        return wr
-
-    def session_score(self, dt: datetime) -> float:
-        hour = dt.hour
-        session = "ASIA" if 0 <= hour < 8 else "EU" if 8 <= hour < 16 else "US"
-        return self.hour_score(hour) * 0.7 + self.session_score_raw(session) * 0.3
-
-    def session_score_raw(self, session: str) -> float:
-        pnls = self.session_perf.get(session, [])
-        if not pnls:
-            return 0.5
-        return sum(1 for p in pnls if p > 0) / len(pnls)
+        return stats["wins"] / stats["count"]
