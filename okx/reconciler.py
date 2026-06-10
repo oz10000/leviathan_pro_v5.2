@@ -11,6 +11,7 @@ class Reconciler:
     Reconciliador de posiciones entre el estado local y OKX.
     Garantiza idempotencia de órdenes mediante tabla sent_orders.
     """
+
     def __init__(self, client):
         self.client = client
         self.db_path = Config.DB_PATH
@@ -19,6 +20,7 @@ class Reconciler:
         self._cooldown = 300
 
     async def restore_state(self):
+        """Crea la tabla sent_orders si no existe."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS sent_orders (
@@ -31,13 +33,15 @@ class Reconciler:
             """)
             await db.commit()
 
-    async def was_order_sent(self, clOrdId):
+    async def was_order_sent(self, clOrdId: str) -> bool:
+        """Verifica si una orden ya fue enviada."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("SELECT 1 FROM sent_orders WHERE clOrdId=?", (clOrdId,))
             row = await cursor.fetchone()
             return row is not None
 
-    async def mark_order_sent(self, clOrdId, symbol, side, size):
+    async def mark_order_sent(self, clOrdId: str, symbol: str, side: str, size: float):
+        """Registra una orden enviada."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO sent_orders VALUES (?,?,?,?,?)",
@@ -45,11 +49,16 @@ class Reconciler:
             )
             await db.commit()
 
-    def on_ws_position(self, data):
+    def on_ws_position(self, data: dict):
+        """Actualiza la posición desde WebSocket."""
         key = f"{data['instId']}:{data['posSide']}"
         self._ws_positions[key] = float(data.get("pos", 0))
 
-    def reconcile_positions(self, local_positions):
+    def reconcile_positions(self, local_positions: list) -> list:
+        """
+        Compara las posiciones locales con las reales en OKX.
+        Cierra posiciones fantasma y devuelve la lista actualizada.
+        """
         remote_data = self.client.get_positions().get("data", [])
         remote_map = {f"{p['instId']}:{p['posSide']}": float(p.get("pos", 0)) for p in remote_data}
         local_map = {f"{p['instId']}:{p['posSide']}": float(p.get("pos", 0)) for p in local_positions}
@@ -71,6 +80,3 @@ class Reconciler:
         return [{"instId": p["instId"], "posSide": p["posSide"], "pos": p["pos"],
                  "avgPx": p.get("avgPx", 0)}
                 for p in remote_data if float(p.get("pos", 0)) > 0]
-
-    def save_state(self, positions):
-        pass
