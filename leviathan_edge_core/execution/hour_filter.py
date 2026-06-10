@@ -1,12 +1,10 @@
 from datetime import datetime, timezone
 
 class HourFilter:
-    """
-    Evita operar en horas UTC de baja liquidez.
-    """
-
+    """Filtro horario para evitar operar en horas de baja liquidez."""
     @staticmethod
-    def is_tradeable_hour() -> bool:
-        h = datetime.now(timezone.utc).hour
-        blocked = {2, 3, 4, 11, 17}
-        return h not in blocked
+    def is_tradeable_hour():
+        now = datetime.now(timezone.utc)
+        if 22 <= now.hour or now.hour < 6:
+            return False
+        return True
