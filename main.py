@@ -1,11 +1,15 @@
+import asyncio
 import logging
 from runtime.orchestrator import Orchestrator
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
-def main():
-    orch = Orchestrator()
-    orch.run()
+async def main():
+    orchestrator = Orchestrator()
+    await orchestrator.run()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
