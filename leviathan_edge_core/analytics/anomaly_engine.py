@@ -1,18 +1,29 @@
 import numpy as np
-from collections import deque
 
 class AnomalyEngine:
-    def __init__(self):
-        self.pnl_hist = deque(maxlen=200)
-        self.score_hist = deque(maxlen=200)
+    """
+    Detecta anomalías en el flujo de PnL. Una anomalía es una desviación
+    significativa respecto a la distribución esperada de resultados.
+    """
+    def __init__(self, window=50, threshold=2.0):
+        self.window = window
+        self.threshold = threshold
+        self.pnl_history = []
+        self.last_anomaly_score = 0.0
 
-    def feed(self, pnl: float, score: float):
-        self.pnl_hist.append(pnl)
-        self.score_hist.append(score)
+    def anomaly_score(self):
+        return self.last_anomaly_score
 
-    def anomaly_score(self) -> float:
-        if len(self.pnl_hist) < 20:
-            return 0.0
-        pnl_arr = np.array(self.pnl_hist)
-        z = (pnl_arr[-1] - np.mean(pnl_arr)) / (np.std(pnl_arr) + 1e-8)
-        return np.clip(abs(z) / 3.0, 0, 1)
+    def feed(self, pnl, meta_score=0.0):
+        self.pnl_history.append(pnl)
+        if len(self.pnl_history) > self.window:
+            self.pnl_history.pop(0)
+
+        if len(self.pnl_history) < 10:
+            self.last_anomaly_score = 0.0
+            return
+
+        mean = np.mean(self.pnl_history)
+        std = np.std(self.pnl_history) + 1e-8
+        z_score = (pnl - mean) / std
+        self.last_anomaly_score = abs(z_score) * (1.0 - meta_score)
