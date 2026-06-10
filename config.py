@@ -1,12 +1,10 @@
 import os
 from dotenv import load_dotenv
 
-# ─── Carga de variables de entorno (.env) ───
 load_dotenv()
 
 class Config:
     # ─── MODO DE OPERACIÓN ───
-    # Cambia a "live" cuando uses dinero real.
     LIVE = os.getenv("LIVE", "false").lower() in ("true", "1", "yes")
 
     # ─── CREDENCIALES ───
@@ -43,15 +41,19 @@ class Config:
     KELLY_SAFE_FACTOR = float(os.getenv("KELLY_SAFE_FACTOR", "0.25"))
 
     # ─── FILTROS Y EDGE ───
-    MTF_THRESHOLD = 0.65
-    ENTROPY_THRESHOLD = 0.70
-    DIVERGENCE_THRESHOLD = 0.35
+    MTF_CONVERGENCE_THRESHOLD = 0.65
+    DIVERGENCE_MAX_TOLERANCE = 0.35
+    ENTROPY_MAX_ALLOWED = 0.70
+    SL_ATR = 1.5
 
     # ─── PARÁMETROS DE CICLO ───
-    CYCLE_DURATION_MINUTES = int(os.getenv("CYCLE_DURATION_MINUTES", "230"))   # 3h50m
+    CYCLE_DURATION_MINUTES = int(os.getenv("CYCLE_DURATION_MINUTES", "230"))
     EDGE_ALERT_THRESHOLD = float(os.getenv("EDGE_ALERT_THRESHOLD", "1.15"))
     DAPS_DECAY_LAMBDA = float(os.getenv("DAPS_DECAY_LAMBDA", "0.99"))
 
     # ─── ALERTAS ───
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+    # ─── PERSISTENCIA ───
+    DB_PATH = os.getenv("DB_PATH", "leviathan.db")
