@@ -1,25 +1,33 @@
 import numpy as np
-from collections import deque
 
 class PerformanceTracker:
     """
-    Calcula el Sharpe ratio rodante basado en snapshots de equity.
-    Ventana configurable, solo usa datos pasados.
+    Rastrea el rendimiento en tiempo real: Sharpe, Sortino, drawdown, etc.
     """
-
-    def __init__(self, window: int = 25):
+    def __init__(self, window=25):
         self.window = window
-        self.equity_snapshots = deque(maxlen=window + 1)
+        self.equity_curve = []
+        self.pnl_history = []
 
-    def add_equity_snapshot(self, equity: float):
-        self.equity_snapshots.append(equity)
+    def add_equity_snapshot(self, capital):
+        self.equity_curve.append(capital)
 
-    def realtime_sharpe(self) -> float:
-        if len(self.equity_snapshots) < 2:
+    def add_trade(self, pnl):
+        self.pnl_history.append(pnl)
+        if len(self.pnl_history) > self.window * 4:
+            self.pnl_history.pop(0)
+
+    def realtime_sharpe(self):
+        if len(self.pnl_history) < 5:
             return 0.0
-        eq = np.array(self.equity_snapshots)
-        returns = np.diff(eq) / (eq[:-1] + 1e-8)
-        if len(returns) < 2:
+        returns = self.pnl_history[-self.window:]
+        if np.std(returns) == 0:
             return 0.0
-        sharpe = np.sqrt(252) * returns.mean() / (returns.std() + 1e-8)
-        return float(np.clip(sharpe, -3.0, 6.0))
+        return (np.mean(returns) / np.std(returns)) * np.sqrt(252)
+
+    def current_drawdown(self):
+        if len(self.equity_curve) < 2:
+            return 0.0
+        peak = max(self.equity_curve)
+        current = self.equity_curve[-1]
+        return (peak - current) / peak if peak > 0 else 0.0
