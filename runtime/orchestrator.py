@@ -5,22 +5,30 @@ import traceback
 from typing import Dict, Any
 import pandas as pd
 from config import Config
+
+# -------------------------------------------------------------------
+# FIX: NAME MISMATCH – Se importan las clases reales con alias locales
+# -------------------------------------------------------------------
 from leviathan_edge_core.execution.okx_api_connector import OKXClient
-from leviathan_edge_core.execution.rotational_engine import RotationalEngine
 from leviathan_edge_core.execution.exit_hybrid import HybridExit
-from leviathan_edge_core.execution.order_router import OrderRouter
-from leviathan_edge_core.execution.position_manager import PositionManager
 from leviathan_edge_core.portfolio.top100_selector import fetch_top100_symbols
-from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumEngine
-from leviathan_edge_core.core.feature_engine import FeatureEngine
 from leviathan_edge_core.daps.daps_core import DAPSEngine
-from leviathan_edge_core.risk.risk_manager import RiskManager
-from leviathan_edge_core.risk.circuit_breaker import CircuitBreaker
+from leviathan_edge_core.risk.kelly import KellySizer
 from edge_monitor import EdgeMonitor
 from runtime.state_manager import StateManager
 from runtime.pnl_tracker import PnLTracker
 from okx.reconciler import Reconciler
 from monitoring.alert import send_alert
+
+# Clases reales con alias para el resto del código
+from leviathan_edge_core.core.feature_engine import FeatureCalculator as FeatureEngine
+from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceCalculator as MTFConvergenceEngine
+from leviathan_edge_core.execution.rotational_engine import RotationalEngineCalculator as RotationalEngine
+from leviathan_edge_core.risk.risk_manager import RiskCalculator as RiskManager
+from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumCalculator as VelocityMomentumEngine
+from leviathan_edge_core.risk.circuit_breaker import CircuitBreakerCalculator as CircuitBreaker
+from leviathan_edge_core.execution.order_router import OrderRouterCalculator as OrderRouter
+from leviathan_edge_core.execution.position_manager import PositionCalculator as PositionManager
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +64,9 @@ class Orchestrator:
         self._running = True
         logger.info(f"Cycle started. LIVE={Config.LIVE} Duration={Config.CYCLE_DURATION_MINUTES}min")
 
-        # --- INICIALIZACIÓN DEL ESTADO (PATCHES 2, 3, 4) ---
+        # -------------------------------------------------------------------
+        # FIX: STATE BREAK – Inicialización del estado
+        # -------------------------------------------------------------------
         await self.state_mgr.initialize()
         await self.reconciler.restore_state()
 
@@ -120,13 +130,16 @@ class Orchestrator:
                     logger.warning("Circuit breaker triggered, halting trades")
                     break
 
-                # 7. Ejecutar orden con IDEMPOTENCIA (PATCHES 5, 6)
+                # -------------------------------------------------------------------
+                # FIX: FLOW BREAK – Idempotencia de órdenes
+                # -------------------------------------------------------------------
                 clOrdId = "lev_" + str(int(time.time() * 1000))
                 if not await self.reconciler.was_order_sent(clOrdId):
                     result = self.order_router.send(trade, size)
                     if result.get("code") == "0":
                         logger.info(f"Order placed: {symbol} {trade['direction']}")
                         self.position_manager.add_position(trade)
+                        # Marcar orden como enviada para futuros ciclos
                         await self.reconciler.mark_order_sent(
                             clOrdId, symbol, trade.get("direction", "buy"), size
                         )
