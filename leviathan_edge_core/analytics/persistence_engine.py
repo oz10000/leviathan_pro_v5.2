@@ -1,18 +1,24 @@
-import numpy as np
-from collections import deque
-
 class PersistenceEngine:
-    def __init__(self):
-        self.expectancy_history = deque(maxlen=200)
+    """
+    Mide la persistencia del Edge: cuánto tiempo se mantienen las señales rentables
+    sin degradación significativa.
+    """
+    def __init__(self, window=50):
+        self.window = window
+        self.scores = []
 
-    def update(self, expectancy: float):
-        self.expectancy_history.append(expectancy)
+    def persistence_score(self):
+        if len(self.scores) < 10:
+            return 1.0
+        mid = len(self.scores) // 2
+        first_half = sum(self.scores[:mid]) / mid
+        second_half = sum(self.scores[mid:]) / (len(self.scores) - mid)
+        if first_half <= 0:
+            return 0.5
+        ratio = second_half / first_half
+        return max(0.0, min(1.0, ratio))
 
-    def persistence_score(self) -> float:
-        if len(self.expectancy_history) < 30:
-            return 0.5
-        arr = np.array(self.expectancy_history)
-        if np.std(arr) == 0:
-            return 0.5
-        ac1 = np.corrcoef(arr[:-1], arr[1:])[0, 1]
-        return np.clip((ac1 + 1) / 2, 0.1, 1.0)
+    def update(self, score):
+        self.scores.append(score)
+        if len(self.scores) > self.window:
+            self.scores.pop(0)
