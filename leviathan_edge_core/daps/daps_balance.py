@@ -1,14 +1,11 @@
-import numpy as np
-from collections import deque
-
 class DAPSBalance:
-    def __init__(self):
-        self.history = deque(maxlen=200)
-        self.balance = 1.0
+    """
+    Balance dinámico del sistema DAPS.
+    Acumula la señal x con suavizado exponencial para evitar oscilaciones bruscas.
+    """
+    def __init__(self, alpha=0.1):
+        self.value = 0.0
+        self.alpha = alpha
 
-    def update(self, daps_x: float):
-        self.history.append(daps_x)
-        if len(self.history) > 20:
-            mean_abs = np.mean(np.abs(list(self.history)))
-            self.balance = np.clip(1.0 - mean_abs * 2.0, 0.5, 1.5)
-        return self.balance
+    def update(self, x):
+        self.value = (1 - self.alpha) * self.value + self.alpha * x
