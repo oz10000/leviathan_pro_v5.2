@@ -4,6 +4,7 @@ Edge Monitor – Monitoreo en tiempo real del Profit Factor y alertas.
 import json
 import logging
 import time
+import os
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -47,4 +48,31 @@ class EdgeMonitor:
 
     def save_metrics(self, path: str):
         with open(path, "w") as f:
-            json.dump(self.calculate_metrics(), f)
+            json.dump({
+                "window": list(self.window),
+                "alert_active": self.alert_active,
+                **self.calculate_metrics()
+            }, f)
+
+    def load_metrics(self, path: str):
+        """
+        Restaura el historial del monitor desde un archivo JSON.
+        Si el archivo no existe o está corrupto, se inicia en blanco.
+        """
+        if not os.path.exists(path):
+            logger.debug(f"No metrics file found at {path}, starting fresh.")
+            return
+
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            # Restaurar la ventana de trades
+            if "window" in data and isinstance(data["window"], list):
+                for pnl in data["window"]:
+                    self.window.append(float(pnl))
+            # Restaurar el estado de alerta
+            if "alert_active" in data:
+                self.alert_active = bool(data["alert_active"])
+            logger.info(f"EdgeMonitor restored from {path} with {len(self.window)} trades.")
+        except Exception as e:
+            logger.warning(f"Failed to load metrics from {path}: {e}. Starting fresh.")
