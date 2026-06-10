@@ -1,24 +1,17 @@
-import numpy as np
-from collections import deque
-
 class ExpectancyEngine:
+    """
+    Calcula la expectancia (ganancia esperada por operación) basada en el historial reciente.
+    """
     def __init__(self, window=100):
-        self.wins = deque(maxlen=window)
-        self.losses = deque(maxlen=window)
+        self.window = window
+        self.pnl_history = []
 
-    def add(self, pnl: float):
-        if pnl > 0:
-            self.wins.append(pnl)
-        else:
-            self.losses.append(abs(pnl))
+    def add(self, pnl):
+        self.pnl_history.append(pnl)
+        if len(self.pnl_history) > self.window:
+            self.pnl_history.pop(0)
 
     def compute(self):
-        wins = list(self.wins)
-        losses = list(self.losses)
-        if not wins and not losses:
+        if not self.pnl_history:
             return 0.0
-        pw = len(wins) / (len(wins) + len(losses))
-        pl = 1 - pw
-        avg_win = np.mean(wins) if wins else 0
-        avg_loss = np.mean(losses) if losses else 0
-        return pw * avg_win - pl * avg_loss
+        return sum(self.pnl_history) / len(self.pnl_history)
