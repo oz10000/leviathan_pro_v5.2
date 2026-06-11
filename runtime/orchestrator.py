@@ -21,7 +21,7 @@ from okx.reconciler import Reconciler
 from monitoring.alert import send_alert
 
 # Clases reales con alias para el resto del código
-from leviathan_edge_core.core.feature_engine import FeatureEngine
+from leviathan_edge_core.core.feature_engine import FeatureCalculator
 from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceCalculator as MTFConvergenceEngine
 from leviathan_edge_core.execution.rotational_engine import RotationalEngineCalculator as RotationalEngine
 from leviathan_edge_core.risk.risk_manager import RiskCalculator as RiskManager
