@@ -7,7 +7,8 @@ import pandas as pd
 from config import Config
 
 # -------------------------------------------------------------------
-# FIX: NAME MISMATCH – Se importan las clases reales con alias locales
+# IMPORTS CORREGIDOS – Todos los nombres coinciden exactamente con las
+# clases reales definidas en los módulos del repositorio.
 # -------------------------------------------------------------------
 from leviathan_edge_core.execution.okx_api_connector import OKXClient
 from leviathan_edge_core.execution.exit_hybrid import HybridExit
@@ -20,15 +21,15 @@ from runtime.pnl_tracker import PnLTracker
 from okx.reconciler import Reconciler
 from monitoring.alert import send_alert
 
-# Clases reales con alias para el resto del código
-from leviathan_edge_core.core.feature_engine import FeatureCalculator
-from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceCalculator as MTFConvergenceEngine
-from leviathan_edge_core.execution.rotational_engine import RotationalEngineCalculator as RotationalEngine
-from leviathan_edge_core.risk.risk_manager import RiskCalculator as RiskManager
-from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumCalculator as VelocityMomentumEngine
-from leviathan_edge_core.risk.circuit_breaker import CircuitBreakerCalculator as CircuitBreaker
-from leviathan_edge_core.execution.order_router import OrderRouterCalculator as OrderRouter
-from leviathan_edge_core.execution.position_manager import PositionCalculator as PositionManager
+# --- Módulos cuyos nombres ya coincidían con la clase real ---
+from leviathan_edge_core.core.feature_engine import FeatureCalculator   # ← CORREGIDO (antes FeatureEngine)
+from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceEngine
+from leviathan_edge_core.execution.rotational_engine import RotationalEngine
+from leviathan_edge_core.risk.risk_manager import RiskManager
+from leviathan_edge_core.convergence.velocity_momentum_engine import VelocityMomentumEngine
+from leviathan_edge_core.risk.circuit_breaker import CircuitBreaker
+from leviathan_edge_core.execution.order_router import OrderRouter
+from leviathan_edge_core.execution.position_manager import PositionManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class Orchestrator:
         self.velocity_engine = VelocityMomentumEngine()
         self.rotational_engine = RotationalEngine()
         self.order_router = OrderRouter(self.client)
-        self.feature_engine = FeatureEngine()
+        self.feature_engine = FeatureCalculator()       # ← CORREGIDO
         self.circuit_breaker = CircuitBreaker()
         self._running = False
 
@@ -64,9 +65,7 @@ class Orchestrator:
         self._running = True
         logger.info(f"Cycle started. LIVE={Config.LIVE} Duration={Config.CYCLE_DURATION_MINUTES}min")
 
-        # -------------------------------------------------------------------
-        # FIX: STATE BREAK – Inicialización del estado
-        # -------------------------------------------------------------------
+        # --- INICIALIZACIÓN DEL ESTADO ---
         await self.state_mgr.initialize()
         await self.reconciler.restore_state()
 
@@ -103,7 +102,14 @@ class Orchestrator:
                     candles_5m = self.client.get_candles(sym, "5m", limit=100)
                     if not candles_5m:
                         continue
-                    features = self.feature_engine.compute(candles_5m)
+
+                    # ADAPTACIÓN DE INTERFAZ: convertir lista de velas a DataFrame
+                    # para cumplir con el contrato de FeatureCalculator.compute()
+                    df = pd.DataFrame(candles_5m, columns=["ts", "open", "high", "low", "close", "vol", "volCcy"])
+                    df = df.iloc[::-1]  # orden cronológico
+                    for col in ["open", "high", "low", "close", "vol"]:
+                        df[col] = df[col].astype(float)
+                    features = self.feature_engine.compute(df)
                     market_data[sym] = {"candles_5m": candles_5m, "features": features}
 
                 # 3. Generar señal con el motor rotacional
@@ -130,16 +136,13 @@ class Orchestrator:
                     logger.warning("Circuit breaker triggered, halting trades")
                     break
 
-                # -------------------------------------------------------------------
-                # FIX: FLOW BREAK – Idempotencia de órdenes
-                # -------------------------------------------------------------------
+                # 7. Ejecutar orden con IDEMPOTENCIA
                 clOrdId = "lev_" + str(int(time.time() * 1000))
                 if not await self.reconciler.was_order_sent(clOrdId):
                     result = self.order_router.send(trade, size)
                     if result.get("code") == "0":
                         logger.info(f"Order placed: {symbol} {trade['direction']}")
                         self.position_manager.add_position(trade)
-                        # Marcar orden como enviada para futuros ciclos
                         await self.reconciler.mark_order_sent(
                             clOrdId, symbol, trade.get("direction", "buy"), size
                         )
