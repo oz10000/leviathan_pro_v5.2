@@ -21,8 +21,8 @@ from runtime.pnl_tracker import PnLTracker
 from okx.reconciler import Reconciler
 from monitoring.alert import send_alert
 
-# --- Módulos cuyos nombres ya coincidían con la clase real ---
-from leviathan_edge_core.core.feature_engine import FeatureCalculator   # ← CORREGIDO (antes FeatureEngine)
+# --- Módulos con nombres de clase verificados ---
+from leviathan_edge_core.core.feature_engine import FeatureEngine          # ← CORREGIDO
 from leviathan_edge_core.convergence.mtf_convergence_engine import MTFConvergenceEngine
 from leviathan_edge_core.execution.rotational_engine import RotationalEngine
 from leviathan_edge_core.risk.risk_manager import RiskManager
@@ -52,7 +52,7 @@ class Orchestrator:
         self.velocity_engine = VelocityMomentumEngine()
         self.rotational_engine = RotationalEngine()
         self.order_router = OrderRouter(self.client)
-        self.feature_engine = FeatureCalculator()       # ← CORREGIDO
+        self.feature_engine = FeatureEngine()       # ← CORREGIDO
         self.circuit_breaker = CircuitBreaker()
         self._running = False
 
@@ -102,14 +102,7 @@ class Orchestrator:
                     candles_5m = self.client.get_candles(sym, "5m", limit=100)
                     if not candles_5m:
                         continue
-
-                    # ADAPTACIÓN DE INTERFAZ: convertir lista de velas a DataFrame
-                    # para cumplir con el contrato de FeatureCalculator.compute()
-                    df = pd.DataFrame(candles_5m, columns=["ts", "open", "high", "low", "close", "vol", "volCcy"])
-                    df = df.iloc[::-1]  # orden cronológico
-                    for col in ["open", "high", "low", "close", "vol"]:
-                        df[col] = df[col].astype(float)
-                    features = self.feature_engine.compute(df)
+                    features = self.feature_engine.compute(candles_5m)
                     market_data[sym] = {"candles_5m": candles_5m, "features": features}
 
                 # 3. Generar señal con el motor rotacional
