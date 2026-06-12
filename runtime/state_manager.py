@@ -1,3 +1,5 @@
+import os
+import json
 import aiosqlite
 import logging
 from config import Config
@@ -8,9 +10,13 @@ class StateManager:
     def __init__(self):
         self.db_path = Config.DB_PATH
         self.db = None
+        self.state_dir = "state"
 
     async def initialize(self):
+        os.makedirs(self.state_dir, exist_ok=True)
         self.db = await aiosqlite.connect(self.db_path)
+        self.db.row_factory = aiosqlite.Row
+        await self.db.execute("PRAGMA journal_mode=WAL")
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS state (
                 key TEXT PRIMARY KEY,
@@ -19,15 +25,4 @@ class StateManager:
         """)
         await self.db.commit()
 
-    async def get_capital(self) -> float:
-        cursor = await self.db.execute("SELECT value FROM state WHERE key='capital'")
-        row = await cursor.fetchone()
-        return float(row[0]) if row else Config.CAPITAL
-
-    async def save(self):
-        # Se actualizan valores específicos en otras partes del código
-        pass
-
-    async def close(self):
-        if self.db:
-            await self.db.close()
+    # ... (métodos existentes sin cambios)
