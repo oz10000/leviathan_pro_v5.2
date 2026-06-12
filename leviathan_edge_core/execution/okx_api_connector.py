@@ -68,7 +68,7 @@ class OKXClient:
                     time.sleep(2 ** attempt)
         return {"code": "-1", "msg": "request_failed"}
 
-    # --- Métodos públicos ---
+    # ---------- Métodos públicos ----------
     def get_instruments(self, instType: str = "SWAP") -> list:
         data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
         return data.get("data", [])
@@ -77,7 +77,7 @@ class OKXClient:
         data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
         return data.get("data", [])
 
-    # --- Métodos privados ---
+    # ---------- Métodos privados ----------
     def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
         return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
 
