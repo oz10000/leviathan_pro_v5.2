@@ -33,7 +33,7 @@ class OKXClient:
         return str(int(time.time() * 1000) + self._offset)
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        timestamp = self._get_timestamp()          # ← CORREGIDO
+        timestamp = self._get_timestamp()          # ← CORREGIDO: aplica el offset del servidor
         message = timestamp + method.upper() + path + body
         mac = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256)
         sign = base64.b64encode(mac.digest()).decode()
