@@ -17,6 +17,7 @@ class OKXClient:
         self.demo = Config.DEMO
         self.base_url = Config.BASE_URL
         self._offset = 0
+        self._last_sync_time = 0
         self.sync_time()
 
     def sync_time(self):
@@ -24,16 +25,22 @@ class OKXClient:
             resp = requests.get(f"{self.base_url}/api/v5/public/time", timeout=5)
             server_ts = int(resp.json()["data"][0]["ts"])
             self._offset = server_ts - int(time.time() * 1000)
+            self._last_sync_time = time.time()
             logger.info(f"Time synced. Offset: {self._offset}ms")
         except Exception as e:
             logger.warning(f"Time sync failed: {e}")
             self._offset = 0
+            self._last_sync_time = time.time()
 
     def _get_timestamp(self) -> str:
+        current_time = time.time()
+        if current_time - self._last_sync_time > 1800:
+            logger.debug("Periodic time sync triggered (30min interval)")
+            self.sync_time()
         return str(int(time.time() * 1000) + self._offset)
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        timestamp = self._get_timestamp()          # ← CORREGIDO: aplica el offset del servidor
+        timestamp = self._get_timestamp()
         message = timestamp + method.upper() + path + body
         mac = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256)
         sign = base64.b64encode(mac.digest()).decode()
@@ -60,6 +67,18 @@ class OKXClient:
                     resp = requests.post(url, headers=headers, data=body_str, timeout=10)
                 if resp.status_code == 200:
                     return resp.json()
+                elif resp.status_code == 401:
+                    try:
+                        resp_data = resp.json()
+                        if resp_data.get("code") == "50102":
+                            logger.warning(f"OKX code 50102 (timestamp expired). Re-syncing and retrying (attempt {attempt}/{retry})...")
+                            self.sync_time()
+                            if attempt < retry:
+                                time.sleep(0.5)
+                                continue
+                    except (ValueError, KeyError, TypeError):
+                        pass
+                    logger.error(f"HTTP 401: {resp.text}")
                 else:
                     logger.error(f"HTTP {resp.status_code}: {resp.text}")
             except requests.RequestException as e:
@@ -68,7 +87,6 @@ class OKXClient:
                     time.sleep(2 ** attempt)
         return {"code": "-1", "msg": "request_failed"}
 
-    # ---------- Métodos públicos ----------
     def get_instruments(self, instType: str = "SWAP") -> list:
         data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
         return data.get("data", [])
@@ -77,7 +95,10 @@ class OKXClient:
         data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
         return data.get("data", [])
 
-    # ---------- Métodos privados ----------
+    def get_tickers(self, instType: str = "SWAP") -> list:
+        data = self._request("GET", f"/api/v5/market/tickers?instType={instType}")
+        return data.get("data", [])
+
     def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
         return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
 
@@ -89,8 +110,12 @@ class OKXClient:
     def place_order(self, instId: str, side: str, sz: float, posSide: str,
                     reduceOnly: bool = False, clOrdId: str = None) -> dict:
         body = {
-            "instId": instId, "tdMode": "isolated", "side": side,
-            "ordType": "market", "sz": str(sz), "posSide": posSide,
+            "instId": instId,
+            "tdMode": "isolated",
+            "side": side,
+            "ordType": "market",
+            "sz": str(sz),
+            "posSide": posSide,
             "tgtCcy": "base_ccy",
         }
         if reduceOnly:
