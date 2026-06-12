@@ -10,12 +10,6 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 class OKXClient:
-    """
-    Cliente REST mejorado para OKX API v5.
-    - Firma HMAC manual con timestamp sincronizado.
-    - Cabecera x-simulated-trading para demo trading.
-    - Reintentos automáticos con backoff.
-    """
     def __init__(self):
         self.api_key = Config.API_KEY
         self.secret = Config.SECRET
@@ -26,7 +20,6 @@ class OKXClient:
         self.sync_time()
 
     def sync_time(self):
-        """Sincroniza el reloj local con el servidor de OKX."""
         try:
             resp = requests.get(f"{self.base_url}/api/v5/public/time", timeout=5)
             server_ts = int(resp.json()["data"][0]["ts"])
@@ -37,12 +30,10 @@ class OKXClient:
             self._offset = 0
 
     def _get_timestamp(self) -> str:
-        """Devuelve el timestamp ajustado con el offset del servidor."""
         return str(int(time.time() * 1000) + self._offset)
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
-        """Genera las cabeceras de autenticación para una petición."""
-        timestamp = self._get_timestamp()          # ← CORREGIDO: usa el método que aplica offset
+        timestamp = self._get_timestamp()          # ← CORREGIDO
         message = timestamp + method.upper() + path + body
         mac = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256)
         sign = base64.b64encode(mac.digest()).decode()
@@ -58,7 +49,6 @@ class OKXClient:
         return headers
 
     def _request(self, method: str, path: str, body: dict = None, retry: int = 3) -> dict:
-        """Realiza una petición HTTP con reintentos."""
         url = self.base_url + path
         body_str = json.dumps(body) if body else ""
         for attempt in range(1, retry + 1):
@@ -78,7 +68,7 @@ class OKXClient:
                     time.sleep(2 ** attempt)
         return {"code": "-1", "msg": "request_failed"}
 
-    # ---------- Métodos públicos (mercado) ----------
+    # --- Métodos públicos ---
     def get_instruments(self, instType: str = "SWAP") -> list:
         data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
         return data.get("data", [])
@@ -87,7 +77,7 @@ class OKXClient:
         data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
         return data.get("data", [])
 
-    # ---------- Métodos privados (cuenta) ----------
+    # --- Métodos privados ---
     def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
         return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
 
@@ -99,12 +89,8 @@ class OKXClient:
     def place_order(self, instId: str, side: str, sz: float, posSide: str,
                     reduceOnly: bool = False, clOrdId: str = None) -> dict:
         body = {
-            "instId": instId,
-            "tdMode": "isolated",
-            "side": side,
-            "ordType": "market",
-            "sz": str(sz),
-            "posSide": posSide,
+            "instId": instId, "tdMode": "isolated", "side": side,
+            "ordType": "market", "sz": str(sz), "posSide": posSide,
             "tgtCcy": "base_ccy",
         }
         if reduceOnly:
