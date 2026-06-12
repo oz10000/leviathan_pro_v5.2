@@ -81,7 +81,7 @@ class Orchestrator:
         # save_positions: no implementado → se omite, reconciliación ya actualiza OKX
 
         # PATCH E16: get_capital() es async → usar await
-        capital = await self.state_mgr.get_capital()
+        capital = self.state_mgr.get_capital()
 
         # PATCH E7/E8: RotationalEngine necesita args; construirlo con la firma correcta.
         # Como el orquestador maneja strategies/universe/data externamente,
