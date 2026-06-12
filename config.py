@@ -1,3 +1,6 @@
+# PATCH E3: añadir aliases para OKXClient (usa Config.OKX_API_KEY etc.)
+# PATCH E4: añadir MIN_VOL24H
+# PATCH E5: añadir TP_ATR, BE_ATR, TRAIL_ATR, TIME_DECAY_MIN, VOL_CONTRACTION_RATIO
 import os
 from dotenv import load_dotenv
 
@@ -8,7 +11,6 @@ class Config:
     LIVE = os.getenv("LIVE", "false").lower() in ("true", "1", "yes")
 
     # ─── CREDENCIALES ───
-    # Opción 1 (RECOMENDADA): variables de entorno / .env
     if LIVE:
         API_KEY = os.getenv("OKX_LIVE_API_KEY", "")
         SECRET = os.getenv("OKX_LIVE_SECRET", "")
@@ -18,16 +20,12 @@ class Config:
         SECRET = os.getenv("OKX_DEMO_SECRET", "")
         PASSPHRASE = os.getenv("OKX_DEMO_PASSPHRASE", "")
 
-    # Opción 2 (INSEGURA): hardcodear las claves aquí.
-    # Descomenta las líneas de abajo y comenta el bloque de arriba.
-    # if LIVE:
-    #     API_KEY = "tu-api-key-live"
-    #     SECRET = "tu-secret-live"
-    #     PASSPHRASE = "tu-passphrase-live"
-    # else:
-    #     API_KEY = "tu-api-key-demo"
-    #     SECRET = "tu-secret-demo"
-    #     PASSPHRASE = "tu-passphrase-demo"
+    # PATCH E3: aliases exactos que usa OKXClient
+    OKX_API_KEY = API_KEY
+    OKX_API_SECRET = SECRET
+    OKX_API_PASSPHRASE = PASSPHRASE
+    OKX_DEMO = not LIVE
+    REST_URL = "https://www.okx.com"
 
     DEMO = not LIVE
     BASE_URL = "https://www.okx.com"
@@ -45,6 +43,16 @@ class Config:
     DIVERGENCE_MAX_TOLERANCE = 0.35
     ENTROPY_MAX_ALLOWED = 0.70
     SL_ATR = 1.5
+
+    # PATCH E5: constantes de salida usadas por exit_hybrid.py
+    TP_ATR = float(os.getenv("TP_ATR", "2.0"))
+    BE_ATR = float(os.getenv("BE_ATR", "1.0"))
+    TRAIL_ATR = float(os.getenv("TRAIL_ATR", "1.0"))
+    TIME_DECAY_MIN = float(os.getenv("TIME_DECAY_MIN", "120.0"))
+    VOL_CONTRACTION_RATIO = float(os.getenv("VOL_CONTRACTION_RATIO", "0.5"))
+
+    # PATCH E4: volumen mínimo para top100_selector
+    MIN_VOL24H = float(os.getenv("MIN_VOL24H", "1000000"))
 
     # ─── PARÁMETROS DE CICLO ───
     CYCLE_DURATION_MINUTES = int(os.getenv("CYCLE_DURATION_MINUTES", "230"))
