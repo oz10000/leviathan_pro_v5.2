@@ -26,7 +26,7 @@ class RiskManager:
             logger.info("Max exposure reached, blocking trade")
             return False, 0
 
-        from risk.kelly import KellySizer
+        from leviathan_edge_core.risk.kelly import KellySizer
         win_rate = 0.7
         payoff = 0.8
         fraction = KellySizer.fraction(win_rate, payoff, Config.KELLY_SAFE_FACTOR)
