@@ -59,7 +59,7 @@ class Reconciler:
         Compara las posiciones locales con las reales en OKX.
         Cierra posiciones fantasma y devuelve la lista actualizada.
         """
-        remote_data = self.client.get_positions().get("data", [])
+        remote_data = self.client.get_positions()
         remote_map = {f"{p['instId']}:{p['posSide']}": float(p.get("pos", 0)) for p in remote_data}
         local_map = {f"{p['instId']}:{p['posSide']}": float(p.get("pos", 0)) for p in local_positions}
 
