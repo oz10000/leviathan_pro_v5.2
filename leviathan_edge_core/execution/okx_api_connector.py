@@ -11,18 +11,17 @@ logger = logging.getLogger(__name__)
 
 class OKXClient:
     """
-    Cliente REST unificado para OKX API v5.
+    Cliente REST mejorado para OKX API v5.
     - Firma HMAC manual con timestamp sincronizado.
     - Cabecera x-simulated-trading para demo trading.
     - Reintentos automáticos con backoff.
-    - Métodos públicos y privados completos.
     """
     def __init__(self):
-        self.api_key = Config.OKX_API_KEY
-        self.secret = Config.OKX_API_SECRET
-        self.passphrase = Config.OKX_API_PASSPHRASE
-        self.demo = Config.OKX_DEMO
-        self.base_url = Config.REST_URL
+        self.api_key = Config.API_KEY
+        self.secret = Config.SECRET
+        self.passphrase = Config.PASSPHRASE
+        self.demo = Config.DEMO
+        self.base_url = Config.BASE_URL
         self._offset = 0
         self.sync_time()
 
@@ -43,7 +42,7 @@ class OKXClient:
 
     def _sign(self, method: str, path: str, body: str = "") -> dict:
         """Genera las cabeceras de autenticación para una petición."""
-        timestamp = self._get_timestamp()
+        timestamp = self._get_timestamp()          # ← CORREGIDO: usa el método que aplica offset
         message = timestamp + method.upper() + path + body
         mac = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256)
         sign = base64.b64encode(mac.digest()).decode()
@@ -81,39 +80,24 @@ class OKXClient:
 
     # ---------- Métodos públicos (mercado) ----------
     def get_instruments(self, instType: str = "SWAP") -> list:
-        """Obtiene la lista de instrumentos disponibles."""
         data = self._request("GET", f"/api/v5/public/instruments?instType={instType}")
         return data.get("data", [])
 
     def get_candles(self, instId: str, bar: str = "5m", limit: int = 100) -> list:
-        """Obtiene velas históricas para un símbolo."""
         data = self._request("GET", f"/api/v5/market/candles?instId={instId}&bar={bar}&limit={limit}")
-        return data.get("data", [])
-
-    def get_tickers(self, instType: str = "SWAP") -> list:
-        """Obtiene los tickers públicos de todos los instrumentos."""
-        data = self._request("GET", f"/api/v5/market/tickers?instType={instType}")
         return data.get("data", [])
 
     # ---------- Métodos privados (cuenta) ----------
     def set_position_mode(self, posMode: str = "long_short_mode") -> dict:
-        """Configura el modo de posición (long/short simultáneos)."""
         return self._request("POST", "/api/v5/account/set-position-mode", {"posMode": posMode})
 
     def set_leverage(self, instId: str, lever: int, mgnMode: str = "isolated") -> dict:
-        """Establece el apalancamiento para un símbolo."""
         return self._request("POST", "/api/v5/account/set-leverage", {
             "instId": instId, "lever": str(lever), "mgnMode": mgnMode
         })
 
     def place_order(self, instId: str, side: str, sz: float, posSide: str,
                     reduceOnly: bool = False, clOrdId: str = None) -> dict:
-        """
-        Envía una orden de mercado.
-        - side: "buy" / "sell"
-        - posSide: "long" / "short"
-        - reduceOnly: True para cerrar posición.
-        """
         body = {
             "instId": instId,
             "tdMode": "isolated",
@@ -130,7 +114,6 @@ class OKXClient:
         return self._request("POST", "/api/v5/trade/order", body)
 
     def get_positions(self, instType: str = "SWAP", instId: str = None) -> list:
-        """Obtiene las posiciones abiertas."""
         params = f"/api/v5/account/positions?instType={instType}"
         if instId:
             params += f"&instId={instId}"
@@ -138,7 +121,6 @@ class OKXClient:
         return data.get("data", [])
 
     def close_position(self, instId: str, posSide: str) -> dict:
-        """Cierra una posición abierta enviando una orden reduce-only."""
         positions = self.get_positions(instId=instId)
         for p in positions:
             if p.get("posSide") == posSide:
